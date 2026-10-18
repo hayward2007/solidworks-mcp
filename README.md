@@ -31,18 +31,20 @@
 9. [도구 목록](#도구-목록)
 10. [execute_python 고급 사용](#execute_python-고급-사용)
 11. [설계 지식 베이스](#설계-지식-베이스)
-12. [설정 파일 config.json](#설정-파일-configjson)
-13. [문제 해결](#문제-해결)
-14. [업데이트와 제거](#업데이트와-제거)
-15. [로드맵](#로드맵)
-16. [프로젝트 구조](#프로젝트-구조)
-17. [라이선스와 크레딧](#라이선스와-크레딧)
+12. [기어 생성기](#기어-생성기)
+13. [토폴로지 최적화](#토폴로지-최적화)
+14. [설정 파일 config.json](#설정-파일-configjson)
+15. [문제 해결](#문제-해결)
+16. [업데이트와 제거](#업데이트와-제거)
+17. [로드맵](#로드맵)
+18. [프로젝트 구조](#프로젝트-구조)
+19. [라이선스와 크레딧](#라이선스와-크레딧)
 
 ### 소개
 
 SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 조작하게 해 주는 [Model Context Protocol](https://modelcontextprotocol.io/) 서버예요. 메뉴를 클릭하는 대신 만들고 싶은 형상을 말로 설명하면, Claude가 SolidWorks COM API로 파트를 만들고 스케치를 그리고 피처를 추가해요.
 
-- 도구 31개: 연결, 문서, 스케치, 피처, 유틸리티, SolidWorks API를 직접 실행하는 `execute_python`, 검증(Text-to-CAD), 설계 지식 검색
+- 도구 34개: 연결, 문서, 스케치, 피처, 유틸리티, SolidWorks API를 직접 실행하는 `execute_python`, 검증(Text-to-CAD), 설계 지식 검색, 기어 생성, 토폴로지 최적화
 - 에이전트용 작업 규칙(토큰 절약, 설계 근거)이 매 세션 자동 적용돼요
 - SolidWorks 2023–2025 지원, 설치 경로 자동 탐지(레지스트리)
 - 단위: mm, cm, m, inch, ft (기본 mm)
@@ -59,7 +61,9 @@ SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 �
 | 한국어 SolidWorks 지원 | `create_sketch`가 "Front Plane"만 찾아서 한국어 UI(정면/윗면/우측면)에서 실패하던 문제를 고쳤어요. 이름으로 못 찾으면 기본 평면 순서로 실제 이름을 찾아요. |
 | 저장소 정리 | `.env` 제외(원본에는 API 키가 들어 있었고, 서버는 이 파일을 쓰지 않아요), `.venv/` 무시, `.bat` 파일 줄바꿈(CRLF) 고정. |
 | Text-to-CAD 검증 도구 | `model_report`, `render_views`, `export_model`, `check_interference`를 추가하고, `execute_python`에 도우미 주입과 `report` 옵션을 넣었어요. |
-| 설계 지식 베이스 | `knowledge/` 노트 10개와 `knowledge_search`, `knowledge_get` 도구. |
+| 설계 지식 베이스 | `knowledge/` 노트 12개와 `knowledge_search`, `knowledge_get` 도구. |
+| 기어 생성기 | `gear_design`, `create_gear`: 스퍼·헬리컬·헤링본·내접·랙·직선/스파이럴 베벨·웜·웜휠을 규격 공식으로 만들고 부피와 물림 간섭으로 스스로 검증해요. |
+| 토폴로지 최적화 | `topology_optimize`: ToPy를 Python 3로 옮긴 2D/3D 강성·메커니즘 최적화, 결과를 SolidWorks 파트로 만들어요. |
 | 에이전트 가이드 | 작업 흐름, 토큰 절약, 근거 규칙을 서버 instructions로 매 세션 자동 적용해요. |
 | 출력 토큰 절감 | `execute_python` 결과 중복 제거, JSON 압축 출력(한글을 `\u` 이스케이프 없이), 트레이스백을 스크립트 부분만 남겨요. |
 
@@ -69,7 +73,7 @@ SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 �
 - SolidWorks 2023–2025 (설치 및 라이선스 필요)
 - Python 3.10 이상: python.org 설치판 또는 Python Install Manager(`py`) 모두 돼요
 - Claude Desktop 또는 Claude Code
-- 처음 설치할 때 인터넷 연결 (pip 패키지 다운로드)
+- 처음 설치할 때 인터넷 연결 (pip 패키지 다운로드, 토폴로지 최적화용 numpy·scipy 포함 약 60 MB)
 
 검증 환경: SolidWorks 2025 (revision 33.5.0, 한국어 UI), Python 3.14.7, Claude Desktop (Windows, Microsoft Store/MSIX 설치판).
 
@@ -208,6 +212,9 @@ Claude는 보통 `create_sketch` → `draw_*` → `close_sketch` → `extrude_sk
 | 검증 | `check_interference` | 어셈블리 부품 사이 간섭 부피(mm³) | - |
 | 지식 | `knowledge_search` | 설계 지식 베이스 검색 (한글·영어 키워드) | `query`, `limit` |
 | 지식 | `knowledge_get` | 섹션 하나, 주제 전체, 또는 `index` | `id` |
+| 기어 | `gear_design` | 기어 치수, 전위, 중심거리, 물림률, 간섭 경고 계산 (CAD 없이) | `kind`, `module`, `teeth` |
+| 기어 | `create_gear` | 기어를 네이티브 피처로 만들고 자가 검증 (짝 기어와 물림 검사 선택) | `type`, `module`, `teeth`, `build_mate` |
+| 최적화 | `topology_optimize` | 2D/3D 토폴로지 최적화 시작·확인, 결과로 파트 생성 | `problem` 또는 `tpd`, `job`, `build` |
 
 `fillet_edges`와 `chamfer_edges`는 모서리가 먼저 선택돼 있어야 해요. SolidWorks에서 직접 고르거나 `execute_python`으로 선택하세요.
 
@@ -252,9 +259,43 @@ result = report()                        # 오류, 바디, 경계 상자, 질량
 | 축·키 | `shafts-keys.md` | 축 설계식, 키 치수, 스냅링 홈, D컷 |
 | 재료 | `materials.md` | 금속·플라스틱·3D 프린팅 재료 물성 |
 | DFM | `dfm.md` | 가공, 판금, 사출, FDM·SLA·SLS 규칙 |
-| API 레시피 | `solidworks-api.md` | 검증된 SolidWorks API 호출 (스케치, 로프트, 패턴, 구성, 메이트, 검사) |
+| 기어 생성기 | `gear-generators.md` | create_gear 종류, 좌표계, 기본값 근거, 자가 검증, 어셈블리 배치 |
+| 토폴로지 최적화 | `topology-optimization.md` | 문제 정의(mm), 기본값 근거, 결과 해석, 파트로 만들기 |
+| API 레시피 | `solidworks-api.md` | 검증된 SolidWorks API 호출 (스케치, 로프트, 스윕, 패턴, 구성, 메이트, 검사, STL 불러오기) |
 
 노트를 추가하려면 같은 형식(맨 위 `title`, `tags`, `summary`와 `## ` 섹션)으로 `knowledge/`에 `.md` 파일을 넣고 Claude를 다시 시작하세요. 수치를 넣을 때는 출처(규격 번호, 카탈로그)를 함께 적어 주세요.
+
+### 기어 생성기
+
+`gear_design`(계산만)과 `create_gear`(SolidWorks 네이티브 피처)로 일반적인 기어를 만들어요. 기어 종류는 OpenSCAD 라이브러리 [chrisspen/gears](https://github.com/chrisspen/gears)에 맞췄지만(헤링본 베벨과 체결 구멍 있는 랙은 제외, 유성기어는 `gear_design`으로 계산한 뒤 부품별로 생성), 그 라이브러리는 CC BY-NC-SA 3.0(비상업·동일조건)이라 코드는 쓰지 않고 규격(ISO 21771, ISO 53, Gleason/AGMA 2005, DIN 3975) 공식으로 직접 구현했어요. 사이클로이드와 하모닉 드라이브는 완제품 구매를 권해서 생성 대상에서 뺐어요.
+
+| type | 형상 | 방식 |
+|---|---|---|
+| `spur`, `helical`, `herringbone` | 외접 스퍼·헬리컬·헤링본 | ISO 53 랙으로 창성한 인볼류트와 트로코이드 이뿌리, 언더컷 자동 반영 |
+| `internal` | 내접(링) 기어 | 인볼류트와 원호 이뿌리 필렛 |
+| `rack` | 스퍼·헬리컬 랙 | ISO 53 기준 랙, 헬리컬 랙도 끝단 직각 |
+| `bevel`, `spiral_bevel` | 직선·스파이럴 베벨 | Tredgold 등가 단면 로프트와 가이드 커브, Gleason 치형 비율 |
+| `worm`, `worm_wheel`, `worm_set` | ZA 웜, 웜휠 | 웜은 헬릭스 스윕, 웜휠은 목(throat)이 있는 헬리컬 근사 |
+
+- 기본값과 근거: 압력각 20°와 ISO 53 A [std], 백래시 0.04 m [heur], 치폭 10 m [heur], 작은 피니언은 언더컷 한계 전위 x_min과 V-zero 짝 [std], 링기어 림 d_f + 6 m [heur]. 결과에 근거 태그가 함께 나와요.
+- 자가 검증: SolidWorks 부피를 정확한 치형 단면적 × 치폭과 비교(보통 0.1 % 이내), 바디 1개, 재생성 오류 없음, 헬리컬은 재질 탐침으로 나선 방향까지 확인해요.
+- `build_mate: true`: 짝 기어(외접은 반대 방향, 내접은 같은 방향)도 만들고 한 피치 굴리면서 임시 바디로 간섭을 재요. 측정값: 스퍼·헬리컬·헤링본·내접·랙 0 mm³, 스파이럴 베벨 0.03–0.09 mm³(Tredgold 근사), 같은 방향 헬리컬 쌍은 162 mm³로 잘못된 조합을 잡아내요.
+- 좌표계: 축 +Z, z = 0 면이 정면, 이홈 하나가 +X 중심. 짝 배치와 위상은 결과의 `phase_deg`를 쓰고, 자세한 내용은 지식 베이스 `gear-generators`에 있어요.
+
+예: "모듈 1.5, 18:36 스퍼 기어 한 쌍, 보어 8에 키홈" → `create_gear {"type": "spur", "module": 1.5, "teeth": 18, "mate_teeth": 36, "build_mate": true, "bore": 8, "keyway": true}`
+
+### 토폴로지 최적화
+
+`topology_optimize`는 [ToPy](https://github.com/williamhunter/topy)(MIT)를 Python 3 + scipy로 옮긴 SIMP 최적화예요. 최소 컴플라이언스(강성 최대)와 컴플라이언트 메커니즘을 2D 판재와 3D로 풀어요. 열전도와 CFD는 넣지 않았어요.
+
+- 검증: 요소 강성 행렬이 ToPy의 SymPy 정의와 기계 정밀도로 같고, MBB 보 계산이 Sigmund 99줄 코드와 같은 값을 내요(첫 반복 1e-11, 8회 반복 1e-9).
+- 문제는 mm로 정의해요: `size`, `element_size`, `thickness`, `volume_fraction`, `supports`, `loads`, `keep_out`/`keep_in`(볼트 구멍 주변은 보존, 움직이는 부품 자리는 제외), `material`. ToPy `.tpd` 파일도 그대로 받아요.
+- 백그라운드 작업으로 돌고 이 호출은 최대 `wait`초 기다려요. 덜 끝났으면 `job`으로 다시 확인해요. 결과에는 반복 수, 부피율, 컴플라이언스, 하중점 변위(mm), 질량, 미리보기 이미지가 들어 있어요.
+- `build: true`: 2D 결과는 밀도 0.5 등고선을 스플라인으로 그려 두께만큼 돌출해요(부피 오차 0.02 %). 3D 결과는 STL을 메시 솔리드 바디로 불러와요(다시 모델링할 때 참고용).
+- 속도(측정): 2D 120 × 60 요소 약 4초, 3D 40 × 20 × 10 요소 반복당 약 0.7초.
+
+예: 왼쪽 고정, 오른쪽 끝 중앙에 1000 N, 부피 40 %, 두께 6 mm 알루미늄 브래킷 →
+`{"problem": {"size": [120, 60], "element_size": 1, "thickness": 6, "volume_fraction": 0.4, "supports": [{"edge": "left"}], "loads": [{"at": [120, 30], "force": [0, -1000]}], "material": {"E": 70000, "density": 2.7}}, "build": true}`
 
 ### 설정 파일 config.json
 
@@ -304,8 +345,11 @@ SolidWorks 지원을 가장 먼저 해요. 진행 순서:
 - [x] **에이전트 가이드**: 토큰 절약 규칙과 설계 근거 규칙 (서버 instructions)
 - [x] **설계 지식 베이스 1차**: 설계 정책, 기어, 베어링, 체결, 공차, 축·키, 재료, DFM, API 레시피
 - [ ] **부품 DB**: KS/ISO 표준 부품 치수 표와, 사용자가 확인한 한국 미스미 품번 등록·검색 (미스미 사이트는 robots.txt와 약관이 자동 수집을 막아서 크롤링하지 않아요)
-- [ ] **기어 생성기**: 스퍼, 헬리컬, 베벨, 스파이럴 베벨 (파라미터 기반)
-- [ ] **최적화**: 토폴로지 최적화, 열·CFD 해석 (SOLIDWORKS Simulation, Flow Simulation API)
+- [x] **기어 생성기**: 스퍼, 헬리컬, 헤링본, 내접, 랙, 직선·스파이럴 베벨, 웜·웜휠 (규격 공식, 부피·물림 자가 검증)
+- [x] **토폴로지 최적화**: 2D/3D 강성·컴플라이언트 메커니즘 (ToPy 포팅), 2D 결과는 돌출 파트로
+- [ ] **유성기어 어셈블리 자동 배치**와 3D 최적화 결과의 리모델링 보조
+
+열해석과 CFD는 이번 범위에서 뺐어요(SOLIDWORKS Flow Simulation 결과 신뢰성 문제로 보류).
 
 ### 프로젝트 구조
 
@@ -322,6 +366,9 @@ Solidworks-MCP/
 │   ├── verification.py        # model_report, render_views, export_model, check_interference
 │   ├── knowledge.py           # 지식 베이스 검색
 │   ├── com.py                 # late binding COM 도우미 (val, call, arr, plane ...)
+│   ├── gears/                 # 기어: geometry(인볼류트), bevel, build(SolidWorks), api(도구 인자)
+│   ├── topopt/                # 토폴로지 최적화 (ToPy 포팅): problem, topology, export, run, cad
+│   ├── tests/                 # 기어·최적화 단위 테스트 (python -m unittest solidworks_mcp.tests.test_gears ...)
 │   ├── config.py, config.json # 설정
 │   ├── constants.py           # SolidWorks 상수
 │   ├── automation/            # base(연결), documents, sketches, features
@@ -334,6 +381,8 @@ Solidworks-MCP/
 ### 라이선스와 크레딧
 
 MIT 라이선스예요 ([LICENSE](LICENSE)). 원본 프로젝트: [alisamsam/Solidworks-MCP](https://github.com/alisamsam/Solidworks-MCP), Samsaam Ali Baig. 원본 저작권 표시와 라이선스 문구를 유지해 주세요.
+
+토폴로지 최적화 코드(`solidworks_mcp/topopt/`)는 William Hunter의 [ToPy](https://github.com/williamhunter/topy)(MIT)를 옮긴 것이고, 라이선스 전문은 `solidworks_mcp/topopt/LICENSE_TOPY.md`에 있어요. ToPy의 2D 부분은 Ole Sigmund의 99줄 코드를 바탕으로 해요. 기어 생성기는 chrisspen/gears(CC BY-NC-SA 3.0)의 코드를 쓰지 않았어요.
 
 ---
 
@@ -352,18 +401,20 @@ MIT 라이선스예요 ([LICENSE](LICENSE)). 원본 프로젝트: [alisamsam/Sol
 9. [Tool reference](#tool-reference)
 10. [Advanced: execute_python](#advanced-execute_python)
 11. [Design knowledge base](#design-knowledge-base)
-12. [Configuration (config.json)](#configuration-configjson)
-13. [Troubleshooting](#troubleshooting)
-14. [Updating and uninstalling](#updating-and-uninstalling)
-15. [Roadmap](#roadmap)
-16. [Project structure](#project-structure)
-17. [License and credits](#license-and-credits)
+12. [Gear generators](#gear-generators)
+13. [Topology optimization](#topology-optimization)
+14. [Configuration (config.json)](#configuration-configjson)
+15. [Troubleshooting](#troubleshooting)
+16. [Updating and uninstalling](#updating-and-uninstalling)
+17. [Roadmap](#roadmap)
+18. [Project structure](#project-structure)
+19. [License and credits](#license-and-credits)
 
 ### Overview
 
 SolidWorks MCP Server is a [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent such as Claude drive SolidWorks. Instead of clicking through menus, you describe the geometry you want and Claude builds it through the SolidWorks COM API: parts, sketches and features.
 
-- 31 tools: connection, documents, sketches, features, utilities, `execute_python` for direct SolidWorks API access, verification (text-to-CAD) and design-knowledge search
+- 34 tools: connection, documents, sketches, features, utilities, `execute_python` for direct SolidWorks API access, verification (text-to-CAD), design-knowledge search, gear generation and topology optimization
 - Agent working rules (token budget, design rationale) are applied automatically in every session
 - SolidWorks 2023–2025, installation auto-detected from the registry
 - Units: mm, cm, m, inch, ft (default mm)
@@ -380,7 +431,9 @@ SolidWorks MCP Server is a [Model Context Protocol](https://modelcontextprotocol
 | Localized SolidWorks | `create_sketch` only looked for "Front Plane", so it failed in non-English UIs (Korean: 정면/윗면/우측면). It now falls back to the default planes' actual names. |
 | Repository cleanup | `.env` removed (the original contained an API key; the server does not use it), `.venv/` ignored, CRLF line endings enforced for `.bat` files. |
 | Text-to-CAD verification | Added `model_report`, `render_views`, `export_model`, `check_interference`; `execute_python` gets injected helpers and a `report` option. |
-| Design knowledge base | 10 notes in `knowledge/` with `knowledge_search` and `knowledge_get`. |
+| Design knowledge base | 12 notes in `knowledge/` with `knowledge_search` and `knowledge_get`. |
+| Gear generators | `gear_design`, `create_gear`: spur, helical, herringbone, internal, rack, straight/spiral bevel, worm and worm wheel from the standards' formulas, self-checked by volume and mesh interference. |
+| Topology optimization | `topology_optimize`: ToPy ported to Python 3 for 2D/3D stiffness and compliant-mechanism problems, results turned into SolidWorks parts. |
 | Agent guide | Workflow, token rules and rationale policy are sent as MCP server instructions in every session. |
 | Fewer output tokens | No duplicated `execute_python` output, compact JSON without `\u` escapes, tracebacks trimmed to the script frames. |
 
@@ -390,7 +443,7 @@ SolidWorks MCP Server is a [Model Context Protocol](https://modelcontextprotocol
 - SolidWorks 2023–2025, installed and licensed
 - Python 3.10 or newer: the python.org installer or the Python Install Manager (`py`)
 - Claude Desktop or Claude Code
-- Internet access for the first install (pip packages)
+- Internet access for the first install (pip packages, about 60 MB including numpy and scipy for topology optimization)
 
 Tested with SolidWorks 2025 (revision 33.5.0, Korean UI), Python 3.14.7 and Claude Desktop for Windows (Microsoft Store/MSIX build).
 
@@ -529,6 +582,9 @@ Every tool that takes lengths also accepts an optional `unit` (mm, cm, m, inch, 
 | Verification | `check_interference` | Interference volumes (mm³) between assembly components | - |
 | Knowledge | `knowledge_search` | Search the design knowledge base (Korean or English keywords) | `query`, `limit` |
 | Knowledge | `knowledge_get` | One section, a whole topic, or `index` | `id` |
+| Gears | `gear_design` | Gear dimensions, profile shifts, centre distance, contact ratio, interference warnings (no CAD) | `kind`, `module`, `teeth` |
+| Gears | `create_gear` | Build a gear as native features and check it (optionally with its mate and a mesh check) | `type`, `module`, `teeth`, `build_mate` |
+| Optimization | `topology_optimize` | Start / poll a 2D or 3D topology optimization, build the part from the result | `problem` or `tpd`, `job`, `build` |
 
 `fillet_edges` and `chamfer_edges` work on edges that are already selected; select them in SolidWorks or with `execute_python`.
 
@@ -573,9 +629,43 @@ The agent searches the Markdown notes in `knowledge/`. Notes are written in Engl
 | Shafts and keys | `shafts-keys.md` | shaft sizing, key dimensions, retaining ring grooves, D-cuts |
 | Materials | `materials.md` | metals, plastics and 3D printing materials |
 | DFM | `dfm.md` | machining, sheet metal, injection moulding, FDM/SLA/SLS rules |
-| API recipes | `solidworks-api.md` | verified SolidWorks API calls (sketches, lofts, patterns, configurations, mates, checks) |
+| Gear generators | `gear-generators.md` | create_gear types, frames, defaults and their basis, self-checks, assembly placement |
+| Topology optimization | `topology-optimization.md` | problem spec in mm, defaults and basis, reading results, turning them into parts |
+| API recipes | `solidworks-api.md` | verified SolidWorks API calls (sketches, lofts, sweeps, patterns, configurations, mates, checks, STL import) |
 
 To add a note, put a `.md` file in `knowledge/` with the same layout (`title`, `tags`, `summary` at the top, `## ` sections) and restart Claude. Give a source (standard number, catalogue) for every value.
+
+### Gear generators
+
+`gear_design` (numbers only) and `create_gear` (native SolidWorks features) cover the common gear types. The type list follows the OpenSCAD library [chrisspen/gears](https://github.com/chrisspen/gears) (except herringbone bevels and racks with screw holes; planetary sets are computed with `gear_design` and built part by part), but that library is CC BY-NC-SA 3.0 (non-commercial, share-alike), so none of its code is used: everything is implemented from the standards (ISO 21771, ISO 53, Gleason/AGMA 2005, DIN 3975). Cycloidal and strain-wave drives are left out (buy them as units).
+
+| type | Geometry | Method |
+|---|---|---|
+| `spur`, `helical`, `herringbone` | external spur, helical, herringbone | involute and trochoidal root generated by the ISO 53 rack, undercut included |
+| `internal` | internal (ring) gear | involute with a circular root fillet |
+| `rack` | spur or helical rack | ISO 53 basic rack, square ends also for helical racks |
+| `bevel`, `spiral_bevel` | straight or spiral bevel | Tredgold section loft with guide curves, Gleason proportions |
+| `worm`, `worm_wheel`, `worm_set` | ZA worm, worm wheel | helix sweep; wheel = throated helical approximation |
+
+- Defaults and basis: 20 deg and ISO 53 A [std], backlash 0.04 m [heur], face width 10 m [heur], small pinions get the undercut limit x_min with a V-zero mate [std], ring rim d_f + 6 m [heur]. Results carry the basis tags.
+- Self-checks: SolidWorks volume against the exact tooth-section area x face width (normally within 0.1 %), one body, no rebuild errors, helix hand confirmed by probing the material.
+- `build_mate: true` builds the mating gear (opposite hand external, same hand internal) and rolls the pair through one pitch with temporary bodies. Measured: spur, helical, herringbone, internal and rack pairs 0 mm³; spiral bevel 0.03-0.09 mm³ (Tredgold approximation); a same-hand helical pair shows 162 mm³, so wrong combinations are caught.
+- Frames: axis +Z, z = 0 face on the Front plane, a tooth space centred on +X. Use `phase_deg` from the result to place pairs; details in the knowledge note `gear-generators`.
+
+Example: "module 1.5, 18:36 spur pair, 8 mm bore with keyway" -> `create_gear {"type": "spur", "module": 1.5, "teeth": 18, "mate_teeth": 36, "build_mate": true, "bore": 8, "keyway": true}`
+
+### Topology optimization
+
+`topology_optimize` is a SIMP optimizer ported from [ToPy](https://github.com/williamhunter/topy) (MIT) to Python 3 + scipy: minimum compliance (maximum stiffness) and compliant mechanisms, 2D plates and 3D. Heat conduction and CFD are not included.
+
+- Verification: the element matrices equal ToPy's SymPy definitions to machine precision, and the MBB beam reproduces Sigmund's 99-line code (first iteration to 1e-11, eight iterations to 1e-9).
+- Problems are given in mm: `size`, `element_size`, `thickness`, `volume_fraction`, `supports`, `loads`, `keep_out` / `keep_in` (keep material around bolt holes, clear space for moving parts), `material`. ToPy `.tpd` files are accepted as they are.
+- Runs as a background job; the call waits up to `wait` s, then poll with `job`. Results include iterations, volume fraction, compliance, load-point displacement (mm), mass and a preview image.
+- `build: true`: a 2D result becomes splines along the 0.5-density contour extruded by the thickness (volume error 0.02 %); a 3D result is imported from STL as a mesh solid body (reference for remodelling).
+- Speed (measured): 2D 120 x 60 elements about 4 s; 3D 40 x 20 x 10 elements about 0.7 s per iteration.
+
+Example: left edge fixed, 1000 N at the middle of the right end, 40 % volume, 6 mm aluminium bracket ->
+`{"problem": {"size": [120, 60], "element_size": 1, "thickness": 6, "volume_fraction": 0.4, "supports": [{"edge": "left"}], "loads": [{"at": [120, 30], "force": [0, -1000]}], "material": {"E": 70000, "density": 2.7}}, "build": true}`
 
 ### Configuration (config.json)
 
@@ -625,8 +715,11 @@ SolidWorks support comes first. Order of work:
 - [x] **Agent guide**: token rules and design-rationale rules (server instructions)
 - [x] **Design knowledge base v1**: design policy, gears, bearings, fasteners, fits, shafts and keys, materials, DFM, API recipes
 - [ ] **Parts database**: KS/ISO standard part tables plus MISUMI Korea part numbers registered by the user (the MISUMI site's robots.txt and terms forbid automated collection, so it is not crawled)
-- [ ] **Gear generators**: parametric spur, helical, bevel and spiral bevel gears
-- [ ] **Optimization**: topology optimization, thermal and CFD studies (SOLIDWORKS Simulation and Flow Simulation APIs)
+- [x] **Gear generators**: spur, helical, herringbone, internal, rack, straight and spiral bevel, worm and worm wheel (standard formulas, self-checked volume and mesh)
+- [x] **Topology optimization**: 2D/3D stiffness and compliant mechanisms (ToPy port), 2D results as extruded parts
+- [ ] **Planetary assembly placement** and help with remodelling 3D optimization results
+
+Thermal and CFD studies are out of scope for now (SOLIDWORKS Flow Simulation results were not trusted enough).
 
 ### Project structure
 
@@ -643,6 +736,9 @@ Solidworks-MCP/
 │   ├── verification.py        # model_report, render_views, export_model, check_interference
 │   ├── knowledge.py           # knowledge base search
 │   ├── com.py                 # late-binding COM helpers (val, call, arr, plane, ...)
+│   ├── gears/                 # gears: geometry (involute), bevel, build (SolidWorks), api (tool arguments)
+│   ├── topopt/                # topology optimization (ToPy port): problem, topology, export, run, cad
+│   ├── tests/                 # gear and optimizer unit tests (python -m unittest solidworks_mcp.tests.test_gears ...)
 │   ├── config.py, config.json # configuration
 │   ├── constants.py           # SolidWorks constants
 │   ├── automation/            # base (connection), documents, sketches, features
@@ -655,3 +751,5 @@ Solidworks-MCP/
 ### License and credits
 
 MIT License ([LICENSE](LICENSE)). Original project: [alisamsam/Solidworks-MCP](https://github.com/alisamsam/Solidworks-MCP) by Samsaam Ali Baig. Please keep the original copyright notice and license text.
+
+The topology optimization code (`solidworks_mcp/topopt/`) is a port of [ToPy](https://github.com/williamhunter/topy) by William Hunter (MIT); the full license is in `solidworks_mcp/topopt/LICENSE_TOPY.md`. ToPy's 2D part is based on Ole Sigmund's 99-line code. The gear generators do not use code from chrisspen/gears (CC BY-NC-SA 3.0).

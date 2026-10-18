@@ -6,6 +6,8 @@ summary: Gear type selection, geometry formulas (spur, helical, bevel, spiral be
 
 # Gears
 
+Generators: `gear_design` / `create_gear` build all types below except strain wave and cycloidal (see gear-generators).
+
 ## Choosing a gear type
 | Need | Type | Typical ratio per stage | Notes |
 |---|---|---|---|
@@ -27,7 +29,7 @@ summary: Gear type selection, geometry formulas (spur, helical, bevel, spiral be
 - d = m z, da = d + 2 m (1 + x), df = d - 2.5 m + 2 x m, db = d cos(alpha), circular pitch p = pi m.
 - Tooth thickness at the pitch circle s = pi m / 2 + 2 x m tan(alpha).
 - Centre distance a = m (z1 + z2) / 2 (no shift). Transverse contact ratio: aim 1.4-1.8, never below 1.2.
-- Backlash: thin each flank by 0.02-0.05 m (machined) or set total 0.1-0.2 mm for FDM gears.
+- Backlash: total circumferential backlash about 0.04 m for machined gears (0.03-0.08 mm at m 1), each gear thinned by half; 0.1-0.2 mm total for FDM gears.
 - Hunting tooth: choose z1, z2 without common factors when wear matters.
 
 ## Helical gears
@@ -63,6 +65,7 @@ summary: Gear type selection, geometry formulas (spur, helical, bevel, spiral be
 
 ## Worm gears
 - Axial module m of the worm = transverse module of the wheel; diameter quotient q = d1 / m (8-20 typical).
+- Worm and wheel have the same hand (a right-hand worm drives a right-hand wheel).
 - Lead angle gamma: tan(gamma) = z1 m / d1 = z1 / q. Centre distance a = m (q + z2) / 2.
 - Efficiency (worm driving) about tan(gamma) / tan(gamma + phi'), phi' = atan(mu / cos(alpha_n)).
 - Self-locking only if gamma < phi' (roughly < 3-5 deg for lubricated steel/bronze); vibration can still back-drive it, so use a brake where safety matters.

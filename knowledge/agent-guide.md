@@ -9,6 +9,8 @@ summary: How to turn short or vague requests into verified SolidWorks models in 
 ## The loop
 1. **Spec** (max ~10 lines): purpose, envelope, interfaces (mating parts, shafts, bolt patterns), loads/motion, process + material, the numbers to hit. Every number gets a basis tag ([req] [std] [calc] [cat] [dfm] [heur] [neutral], see design-policy).
 2. **Look up only what you need**: `knowledge_search` (snippets, cheap) then `knowledge_get` for one section. Proven API recipes are in `solidworks-api`.
+   - Gears: `gear_design` first (numbers and warnings, no CAD), then `create_gear` (one call per gear or pair, self-checked); see `gear-generators`.
+   - Lightweight parts: `topology_optimize` on the design space, `build: true` for the plate, then add interface features; see `topology-optimization`.
 3. **Plan the feature order**: base feature -> main features -> patterns/mirrors -> holes and fits -> fillets/chamfers last.
 4. **Build one stage per `execute_python` call**, parameters at the top of the script, helpers injected (see below).
 5. **Verify every stage**: `report()` inside the script (or `model_report`). Images only at milestones.

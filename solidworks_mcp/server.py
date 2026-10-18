@@ -64,6 +64,59 @@ server = Server("solidworks-mcp-server", instructions=SERVER_INSTRUCTIONS)
 # Tool Definitions
 # ============================================================================
 
+_NUM = {"type": "number"}
+_GEAR_COMMON = {
+    "module": {"type": "number", "description": "normal module m_n (bevel: outer transverse module; worm: axial)"},
+    "teeth": {"description": "z, or [z1, z2] for a pair", "anyOf": [{"type": "integer"}, {"type": "array", "items": {"type": "integer"}}]},
+    "mate_teeth": {"type": "integer", "description": "teeth of the mating gear (pairs, bevel)"},
+    "pressure_angle": {"type": "number", "default": 20},
+    "helix_angle": {"type": "number", "description": "deg; helical/herringbone default 20"},
+    "hand": {"type": "string", "enum": ["right", "left"], "default": "right"},
+    "profile_shift": {"description": "x or [x1, x2]; default: undercut limit for small z, V-zero pair", "anyOf": [_NUM, {"type": "array", "items": _NUM}]},
+    "centre_distance": {"type": "number", "description": "mm; profile shifts are computed to suit"},
+    "backlash": {"type": "number", "description": "mm, circumferential for the mesh (default 0.04 m)"},
+    "face_width": {"type": "number", "description": "mm (default 10 m; bevel min(R_e/3, 10 m))"},
+    "spiral_angle": {"type": "number", "description": "bevel mean spiral angle, deg (spiral_bevel default 35)"},
+    "shaft_angle": {"type": "number", "default": 90},
+    "system": {"type": "string", "enum": ["gleason", "standard"], "default": "gleason"},
+    "starts": {"type": "integer", "description": "worm starts", "default": 1},
+    "diameter_quotient": {"type": "number", "description": "worm q = d1/m", "default": 10},
+}
+_GEAR_SCHEMA_DESIGN = {"type": "object", "required": [], "properties": dict(_GEAR_COMMON, **{
+    "kind": {"type": "string", "enum": ["pair", "gear", "internal", "rack", "bevel", "planetary", "worm"], "default": "pair"},
+    "internal": {"type": "boolean", "description": "pair with an internal (ring) gear 2"},
+    "ratio": {"type": "number", "description": "planetary: target ratio (ring fixed, sun in, carrier out)"},
+    "planets": {"type": "integer", "default": 3},
+    "pitches": {"type": "integer", "description": "rack length in pitches"},
+})}
+_GEAR_SCHEMA_CREATE = {"type": "object", "required": ["type", "module"], "properties": dict(_GEAR_COMMON, **{
+    "type": {"type": "string", "enum": ["spur", "helical", "herringbone", "internal", "rack", "bevel", "spiral_bevel",
+                                        "worm", "worm_wheel", "worm_set"]},
+    "build_mate": {"type": "boolean", "default": False, "description": "also build the mating gear and check the mesh"},
+    "internal_mate": {"type": "boolean", "default": False, "description": "mate is a ring gear (pinion + ring)"},
+    "bore": {"type": "number", "description": "mm"}, "mate_bore": {"type": "number"},
+    "keyway": {"type": "boolean", "default": False, "description": "DIN 6885 hub keyway for the bore"},
+    "rim_diameter": {"type": "number", "description": "internal gear outside diameter (default d_f + 6 m)"},
+    "pitches": {"type": "integer", "description": "rack length in pitches", "default": 10},
+    "height": {"type": "number", "description": "rack datum height above the back (default 9 m)"},
+    "length": {"type": "number", "description": "worm length, mm"},
+    "wheel_teeth": {"type": "integer"}, "wheel_bore": {"type": "number"},
+    "save_path": {"type": "string", "description": "file or folder to save the part(s) as .SLDPRT"},
+})}
+_TOPOLOGY_SCHEMA = {"type": "object", "required": [], "properties": {
+    "problem": {"type": "object", "description": (
+        "size [Lx, Ly(, Lz)] mm; element_size or elements; thickness (2D); volume_fraction (default 0.5); "
+        "supports [{edge|face|at|box, fix: 'xy'}]; loads [{at|box|edge, force: [Fx, Fy(, Fz)] N}]; "
+        "keep_out / keep_in [{box|circle|sphere|cylinder}]; type stiffness|mechanism (+ output {at, direction}); "
+        "material {E, nu, density}; iterations, filter_radius, penalty")},
+    "tpd": {"type": "string", "description": "ToPy problem definition text or file path"},
+    "job": {"type": "string", "description": "job id to poll / build"},
+    "wait": {"type": "number", "default": 40, "description": "seconds to wait in this call (max 50)"},
+    "build": {"type": "boolean", "default": False, "description": "create the SolidWorks part from a finished job"},
+    "thickness": {"type": "number", "description": "plate thickness for build (default: problem thickness)"},
+    "max_time": {"type": "number", "default": 900, "description": "stop the optimisation after this many seconds"},
+}}
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """List all available SolidWorks tools"""
@@ -415,6 +468,35 @@ async def list_tools() -> list[Tool]:
                 "required": ["id"]
             }
         ),
+
+        # Gears (standards based generators) and topology optimisation
+        Tool(
+            name="gear_design",
+            description=("Gear geometry and checks without CAD (ISO 21771 / ISO 53 involute, Gleason bevel, DIN 3975 "
+                         "worm). kind: pair (default), gear, internal, rack, bevel, planetary, worm. Returns "
+                         "diameters, profile shifts, centre distance, contact ratio, tip clearances, mesh phases, "
+                         "warnings and the basis of every default."),
+            inputSchema=_GEAR_SCHEMA_DESIGN
+        ),
+        Tool(
+            name="create_gear",
+            description=("Build a gear as native SolidWorks features in a new part, then check it (volume against "
+                         "the exact tooth-section area, rebuild errors, helix hand by probing). type: spur, helical, "
+                         "herringbone, internal, rack, bevel, spiral_bevel, worm, worm_wheel, worm_set. "
+                         "build_mate=true also builds the mating gear (opposite hand) and rolls the pair through one "
+                         "pitch with a temporary-body interference check. Part frame: axis +Z, a tooth space centred "
+                         "on +X at z = 0; bevel apex at the origin; racks: datum line on X, teeth toward +Y."),
+            inputSchema=_GEAR_SCHEMA_CREATE
+        ),
+        Tool(
+            name="topology_optimize",
+            description=("Structural topology optimisation (SIMP; Python 3 port of ToPy): minimum compliance "
+                         "(stiffness) or compliant mechanism, 2D plate or 3D. Start a job with 'problem' (spec in mm) "
+                         "or 'tpd' (ToPy file text/path); it runs in the background and this call waits up to 'wait' "
+                         "s. Poll with 'job'. 'build': true turns a finished 2D result into an extruded SolidWorks "
+                         "plate (3D: imports the STL as a mesh solid). Returns a small preview image."),
+            inputSchema=_TOPOLOGY_SCHEMA
+        ),
     ]
 
 
@@ -607,6 +689,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             hits = kb().search(arguments.get("query", ""), int(arguments.get("limit", 5) or 5))
             result = {"success": True, "message": f"{len(hits)} result(s); read one with knowledge_get(id)",
                       "error_code": 0, "error_name": "swSuccess", "data": {"results": hits}}
+        
+        elif name in ("gear_design", "create_gear"):
+            result = _gear_handler(name, arguments)
+        
+        elif name == "topology_optimize":
+            result = _topology_handler(arguments)
         
         elif name == "knowledge_get":
             entry = kb().get(arguments.get("id", ""))
@@ -808,6 +896,113 @@ def _verification_handler(name: str, arguments: dict) -> Dict:
         logger.error(f"{name} error: {e}\n{traceback.format_exc()}")
         return {"success": False, "message": f"{name} error: {type(e).__name__}: {e}", "error_code": 999,
                 "error_name": "swUnknownError"}
+
+
+# ============================================================================
+# Gears and topology optimisation
+# ============================================================================
+
+def _ok(message: str, data: Dict, images=None) -> Dict:
+    out = {"success": True, "message": message, "error_code": 0, "error_name": "swSuccess", "data": data}
+    if images:
+        out["images"] = images
+    return out
+
+
+def _fail(message: str) -> Dict:
+    return {"success": False, "message": message, "error_code": 999, "error_name": "swUnknownError"}
+
+
+def _gear_handler(name: str, arguments: dict) -> Dict:
+    from .gears import api as gear_api
+    try:
+        if name == "gear_design":
+            return _ok("gear design", gear_api.design(arguments))
+        if not sw_automation.is_connected:
+            r = sw_automation.connect()
+            if not r["success"]:
+                return r
+        data = gear_api.create(sw_automation.app, arguments)
+        return _ok("gear built: %s" % (data.get("document") or "parts and mesh check"), data)
+    except Exception as e:
+        logger.error(f"{name} error: {e}\n{traceback.format_exc()}")
+        return _fail(f"{name} error: {type(e).__name__}: {e}")
+
+
+_TOPO_DIR = Path(__import__("tempfile").gettempdir()) / "solidworks_mcp" / "topopt"
+
+
+def _topology_handler(arguments: dict) -> Dict:
+    import subprocess
+    import time
+    import uuid
+    try:
+        job_id = arguments.get("job")
+        if not job_id:
+            spec, tpd = arguments.get("problem"), arguments.get("tpd")
+            if not spec and not tpd:
+                return _fail("give 'problem' (spec), 'tpd' or 'job'")
+            if tpd and len(tpd) < 400 and Path(tpd).is_file():
+                tpd = Path(tpd).read_text(encoding="utf-8-sig")
+            job_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
+            job = _TOPO_DIR / job_id
+            job.mkdir(parents=True, exist_ok=True)
+            req = {"spec": spec} if spec else {"tpd": tpd}
+            req["max_time"] = float(arguments.get("max_time", 900))
+            (job / "problem.json").write_text(json.dumps(req), encoding="utf-8")
+            log = open(job / "run.log", "wb")
+            subprocess.Popen([sys.executable, "-m", "solidworks_mcp.topopt.run", str(job)],
+                             cwd=str(Path(__file__).resolve().parent.parent), stdin=subprocess.DEVNULL,
+                             stdout=log, stderr=subprocess.STDOUT,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        job = _TOPO_DIR / job_id
+        if not job.is_dir():
+            return _fail(f"unknown job {job_id}")
+        wait = min(float(arguments.get("wait", 40) or 0), 50.0)
+        t0 = time.time()
+
+        def read(name):
+            f = job / name
+            try:
+                return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+            except ValueError:
+                return None
+        status = read("status.json") or {"state": "starting"}
+        while status.get("state") not in ("done", "error") and time.time() - t0 < wait:
+            time.sleep(0.5)
+            status = read("status.json") or status
+        state = status.get("state")
+        data = {"job": job_id, "state": state, "folder": str(job)}
+        if state == "error":
+            return {"success": False, "message": f"optimisation failed: {status.get('error')}", "error_code": 999,
+                    "error_name": "swUnknownError", "data": data}
+        if state != "done":
+            data["progress"] = read("progress.json")
+            return _ok("running: poll again with job=%s" % job_id, data)
+        result = read("result.json") or {}
+        data.update({k: result.get(k) for k in ("summary", "physical", "cad", "grey_fraction")})
+        meta = result.get("meta") or {}
+        data["grid"] = {"elements": meta.get("n"), "element_size": meta.get("h"), "size": meta.get("size")}
+        images = []
+        prev = job / "preview.png"
+        if prev.exists():
+            images.append(prev.read_bytes())
+        if arguments.get("build"):
+            if not sw_automation.is_connected:
+                r = sw_automation.connect()
+                if not r["success"]:
+                    return r
+            from .topopt import cad
+            if meta.get("dim") == 2:
+                loops = json.loads((job / "loops.json").read_text(encoding="utf-8"))
+                thick = float(arguments.get("thickness") or meta.get("thickness") or meta.get("h") or 1.0)
+                data["part"] = cad.build_plate(sw_automation.app, loops, thick, spacing=float(meta.get("h") or 1.0))
+            else:
+                data["part"] = cad.import_stl(sw_automation.app, str(job / "result.stl"))
+        return _ok("topology optimisation done" + (" and part built" if arguments.get("build") else ""), data, images)
+    except Exception as e:
+        logger.error(f"topology_optimize error: {e}\n{traceback.format_exc()}")
+        return _fail(f"topology_optimize error: {type(e).__name__}: {e}")
 
 
 # ============================================================================

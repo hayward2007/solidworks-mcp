@@ -49,6 +49,11 @@ KO_EN = {
     "로프트": "loft", "패턴": "pattern", "구성": "configuration", "메이트": "mate", "어셈블리": "assembly",
     "스케치": "sketch", "돌출": "extrude", "회전": "revolve", "질량": "mass", "내보내기": "export",
     "렌더": "render image", "이미지": "image render", "평면": "plane", "한국어": "localized korean",
+    "토폴로지": "topology optimization", "위상최적": "topology optimization", "최적화": "optimization optimisation",
+    "경량": "lightweight topology", "강성": "stiffness compliance", "메커니즘": "mechanism compliant",
+    "컴플라이언트": "compliant mechanism", "부피율": "volume fraction", "금지영역": "keep out",
+    "링기어": "ring internal gear", "내접": "internal ring", "헤링본": "herringbone", "웜휠": "worm wheel",
+    "전위": "profile shift", "생성": "generator create", "브라켓": "bracket", "브래킷": "bracket",
 }
 _KO_KEYS = sorted(KO_EN, key=len, reverse=True)
 

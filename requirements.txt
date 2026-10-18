@@ -22,3 +22,7 @@ pywin32>=306
 
 # Images for render_views (crop, resize, 2x2 grid)
 Pillow>=10.0
+
+# Topology optimisation (solidworks_mcp/topopt): sparse finite elements
+numpy>=1.26
+scipy>=1.11

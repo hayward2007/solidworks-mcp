@@ -87,3 +87,13 @@ Temporary body booleans are fast (about 0.3 s for two gears) and accept mirror t
 ## Images and export
 - `render_views` / `render()` hide sketches, planes and axes, save PNGs, return one small grid, and restore the user's view.
 - `export_model` uses Save As copy (STEP, STL, 3MF, IGES, Parasolid, PDF for drawings).
+
+## Gears, sweeps, imports (verified on SolidWorks 2025)
+- 2D sketch with `sm.AddToDB = True` after `InsertSketch`: arcs, splines and lines are created exactly (no snapping) and about 2x faster; shared end points form one contour (check `len(val(sk, "GetSketchContours"))`). If entities are missing, retry with AddToDB False.
+- Cut sweep with constant twist: `call(fm, "InsertCutSwept5", False, True, 8, False, False, 0, 0, False, 0, 0, 0, 0, True, True, twist, True, False, False, False, False, 0, 0)` (profile mark 1, path mark 4, twist in radians, sign honoured). The twist is silently dropped when the path (the gear axis) runs inside the body: keep the axis in air (construction bore) and add the hub afterwards.
+- A sweep starts at the path end nearer the profile; start translation paths at the middle of the profile, or the result goes the opposite way.
+- Probe material without changing the model: `call(modeler, "CreateBodyFromCyl", arr([x, y, z, ax, ay, az, r, h]))` (base centre, axis, radius, height) and intersect with `call(body.Copy, "Operations2", 15901, tool, err)`; err 0/1 is success, anything else is a failed boolean (do not read it as zero volume).
+- Body poses for checks: `ApplyTransform` with rows = images of the X, Y, Z axes, then the translation (metres).
+- Revolve cut (e.g. a worm-wheel throat torus): `FeatureRevolve2(True, True, False, True, ...)`.
+- Splines through sparse points overshoot on straight runs: split closed contours at corners and resample every ~1 element before `CreateSpline2`.
+- STL as a solid body: set `SetUserPreferenceIntegerValue(208, 2)` (solid), `(210, 0)` (mm) and toggle 679 = True (mesh BREP), then `LoadFile4(path, "r", GetImportFileData(path), err)`; restore the preferences afterwards. With toggle 679 False the STL becomes a surface body.
