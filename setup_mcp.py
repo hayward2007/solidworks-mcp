@@ -3,25 +3,32 @@
 """
 SolidWorks MCP Server - Windows setup
 -------------------------------------
-Automates README steps 2 and 3 ("Install Dependencies" and "Configure Claude Desktop"):
+Installs the server for Claude Desktop and Claude Code:
 
   1. creates a virtual environment in .venv next to this file
   2. installs requirements.txt into it
   3. self-tests the server over MCP stdio (initialize + tools/list)
   4. registers it as "solidworks" in Claude Desktop's claude_desktop_config.json
      (other servers and settings are kept; a timestamped backup is written first)
+  5. registers it in Claude Code (claude mcp add --scope user) when the claude CLI is found,
+     copies the solidworks-design skill to ~/.claude/skills and writes
+     dist/solidworks-design.zip for uploading the skill to Claude Desktop / claude.ai
 
-Usage:  double-click setup_windows.bat      (or run:  py setup_mcp.py)
+Usage:  install.ps1 or setup_windows.bat    (or run:  py setup_mcp.py [options])
+        py setup_mcp.py --help               lists the options (--yes, --uninstall, ...)
 Then:   open SolidWorks, fully quit Claude Desktop (tray icon > Quit) and start it again.
 """
 
+import argparse
 import json
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +39,9 @@ REQUIREMENTS = ROOT / "requirements.txt"
 SERVER_NAME = "solidworks"
 MIN_PYTHON = (3, 10)
 LOG_FILE = ROOT / "setup_mcp.log"  # copy of everything this script prints (git-ignored by *.log)
+SKILL_NAME = "solidworks-design"
+SKILL_DIR = ROOT / "skills" / SKILL_NAME  # working rules for Claude (Cowork does not pass server instructions on)
+DIST_DIR = ROOT / "dist"  # git-ignored
 
 
 def venv_python() -> Path:
@@ -99,8 +109,10 @@ def create_venv() -> Path:
 
 
 def install_requirements(python: Path) -> None:
-    subprocess.check_call([str(python), "-m", "pip", "install",
+    print("    (the first run downloads about 60 MB and can take a few minutes)")
+    subprocess.check_call([str(python), "-m", "pip", "install", "--quiet",
                            "--disable-pip-version-check", "-r", str(REQUIREMENTS)])
+    print("    done")
 
 
 # ---------------------------------------------------------------------------
@@ -217,23 +229,162 @@ def register(config_path: Path, entry: dict) -> str:
         return "already up to date"
 
     if config_path.exists():
-        backup = config_path.with_name(f"{config_path.name}.bak-{datetime.now():%Y%m%d-%H%M%S}")
-        backup.write_bytes(config_path.read_bytes())
-        status = f"updated (backup: {backup.name})"
+        status = f"updated (backup: {_backup(config_path)})"
     else:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         status = "created"
     servers[SERVER_NAME] = entry
+    _write_json(config_path, data)
+    return status
+
+
+def unregister(config_path: Path) -> str:
+    """Remove mcpServers.solidworks from one config file; returns what happened."""
+    if not config_path.exists():
+        return "no config file"
+    text = config_path.read_text(encoding="utf-8-sig")
+    data = json.loads(text) if text.strip() else {}
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    if not isinstance(servers, dict) or SERVER_NAME not in servers:
+        return "not registered"
+    backup = _backup(config_path)
+    del servers[SERVER_NAME]
+    _write_json(config_path, data)
+    return f"removed (backup: {backup})"
+
+
+def _backup(config_path: Path) -> str:
+    backup = config_path.with_name(f"{config_path.name}.bak-{datetime.now():%Y%m%d-%H%M%S}")
+    backup.write_bytes(config_path.read_bytes())
+    return backup.name
+
+
+def _write_json(config_path: Path, data: dict) -> None:
     temp = config_path.with_name(config_path.name + ".tmp")
     temp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     os.replace(temp, config_path)
-    return status
+
+
+# ---------------------------------------------------------------------------
+# 5. Claude Code and the solidworks-design skill
+# ---------------------------------------------------------------------------
+
+def find_claude_cli():
+    """Path of the Claude Code CLI, or None if it is not installed."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    candidates = [Path.home() / ".local" / "bin" / ("claude.exe" if os.name == "nt" else "claude")]
+    if os.environ.get("APPDATA"):
+        candidates.append(Path(os.environ["APPDATA"]) / "npm" / "claude.cmd")
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _claude(cli: str, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run([cli, *args], capture_output=True, text=True, errors="replace",
+                          stdin=subprocess.DEVNULL, timeout=120)
+
+
+def register_claude_code(cli: str, entry: dict) -> str:
+    """Add (or replace) the user-scope "solidworks" server in Claude Code."""
+    _claude(cli, "mcp", "remove", SERVER_NAME, "--scope", "user")  # fails harmlessly if absent
+    done = _claude(cli, "mcp", "add", "--scope", "user", SERVER_NAME, "--",
+                   entry["command"], *entry["args"])
+    if done.returncode != 0:
+        raise RuntimeError((done.stderr or done.stdout).strip()[-800:] or f"exit code {done.returncode}")
+    return "registered for all projects (user scope)"
+
+
+def unregister_claude_code(cli: str) -> str:
+    done = _claude(cli, "mcp", "remove", SERVER_NAME, "--scope", "user")
+    return "removed" if done.returncode == 0 else "not registered"
+
+
+def _skill_files():
+    """(relative path, bytes) of the skill; Markdown with LF endings so the front matter parses."""
+    for path in sorted(SKILL_DIR.rglob("*")):
+        if path.is_file():
+            data = path.read_bytes()
+            if path.suffix.lower() == ".md":
+                data = data.replace(b"\r\n", b"\n")
+            yield path.relative_to(SKILL_DIR), data
+
+
+def install_skill(skills_dir: Path) -> Path:
+    """Copy the skill into a Claude Code skills folder (overwrites older copies of its files)."""
+    target = skills_dir / SKILL_NAME
+    for relative, data in _skill_files():
+        destination = target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+    return target
+
+
+def remove_skill(skills_dir: Path) -> str:
+    target = skills_dir / SKILL_NAME
+    if not (target / "SKILL.md").is_file():
+        return "not installed"
+    shutil.rmtree(target)
+    return "removed"
+
+
+def build_skill_zip() -> Path:
+    """dist/solidworks-design.zip with the skill folder at its root (Claude's skill upload format)."""
+    DIST_DIR.mkdir(exist_ok=True)
+    archive = DIST_DIR / f"{SKILL_NAME}.zip"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+        for relative, data in _skill_files():
+            bundle.writestr(f"{SKILL_NAME}/{relative.as_posix()}", data)
+    return archive
 
 
 # ---------------------------------------------------------------------------
 
-def main() -> int:
-    print(f"SolidWorks MCP setup - {datetime.now():%Y-%m-%d %H:%M:%S}")
+def parse_args(argv=None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="setup_mcp.py",
+        description="Install (or remove) the SolidWorks MCP server for Claude Desktop and Claude Code.")
+    parser.add_argument("-y", "--yes", action="store_true",
+                        help="never wait for input (for scripts and AI agents)")
+    parser.add_argument("--no-desktop", action="store_true", help="leave Claude Desktop alone")
+    parser.add_argument("--desktop-config", action="append", type=Path, metavar="PATH",
+                        help="update this claude_desktop_config.json instead of the detected ones (repeatable)")
+    parser.add_argument("--no-claude-code", action="store_true", help="leave Claude Code alone")
+    parser.add_argument("--no-skill", action="store_true", help="skip the solidworks-design skill")
+    parser.add_argument("--skills-dir", type=Path, metavar="PATH",
+                        help="Claude Code skills folder (default: ~/.claude/skills)")
+    parser.add_argument("--uninstall", action="store_true",
+                        help="remove the registrations and the skill (keeps this folder)")
+    return parser.parse_args(argv)
+
+
+def uninstall(args, desktop_paths: list, skills_dir: Path, cli) -> int:
+    step('Removing "solidworks" from Claude Desktop')
+    if args.no_desktop:
+        print("    skipped (--no-desktop)")
+    for path in [] if args.no_desktop else desktop_paths:
+        try:
+            print(f"    {unregister(path)}: {path}")
+        except (OSError, ValueError) as exc:
+            print(f"    could not update {path}: {exc}")
+    step("Removing it from Claude Code")
+    print(f"    {unregister_claude_code(cli)}" if cli else "    Claude Code not found or skipped")
+    step("Removing the solidworks-design skill")
+    print("    skipped (--no-skill)" if args.no_skill
+          else f"    {remove_skill(skills_dir)}: {skills_dir / SKILL_NAME}")
+    print(f"\nDone. You can delete {ROOT} now (server, .venv and knowledge notes).")
+    print("Restart Claude Desktop so it stops starting the server. A skill saved in your Claude")
+    print("account (Cowork, claude.ai) stays until you delete it there.")
+    return 0
+
+
+def main(argv=None) -> int:
+    args = parse_args(argv)
+    interactive = not args.yes and sys.stdin is not None and sys.stdin.isatty()
+    print(f"SolidWorks MCP {'removal' if args.uninstall else 'setup'} - {datetime.now():%Y-%m-%d %H:%M:%S}")
     print(f"  project folder : {ROOT}")
     print(f"  base Python    : {sys.executable} ({sys.version.split()[0]})")
     if os.name != "nt":
@@ -242,41 +393,79 @@ def main() -> int:
     if sys.version_info < MIN_PYTHON:
         print(f"\nPython {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer is required.")
         return 1
-    if claude_desktop_running():
-        print("\nClaude Desktop is running. Quit it first so it reloads its settings afterwards:")
-        print("right-click the Claude icon in the taskbar tray (bottom-right, maybe under ^) > Quit.")
-        input("Press Enter once Claude is closed... ")
-        print("  Claude Desktop " + ("is STILL running - continuing anyway."
-                                     if claude_desktop_running() else "is closed."))
+    desktop_paths = args.desktop_config or claude_config_paths()
+    skills_dir = args.skills_dir or Path.home() / ".claude" / "skills"
+    cli = None if args.no_claude_code else find_claude_cli()
+    if args.uninstall:
+        return uninstall(args, desktop_paths, skills_dir, cli)
 
-    step("1/4  Creating the virtual environment (.venv)")
+    if not args.no_desktop and claude_desktop_running():
+        if interactive:
+            print("\nClaude Desktop is running. Quit it first so it reloads its settings afterwards:")
+            print("right-click the Claude icon in the taskbar tray (bottom-right, maybe under ^) > Quit.")
+            input("Press Enter once Claude is closed... ")
+            print("  Claude Desktop " + ("is STILL running - continuing anyway."
+                                         if claude_desktop_running() else "is closed."))
+        else:
+            print("\nClaude Desktop is running: after setup, quit it from its tray icon and start it again.")
+
+    step("1/5  Creating the virtual environment (.venv)")
     python = create_venv()
 
-    step("2/4  Installing requirements.txt")
+    step("2/5  Installing requirements.txt")
     install_requirements(python)
 
-    step("3/4  Self-test: starting the server and asking for its tools")
+    step("3/5  Self-test: starting the server and asking for its tools")
     tools = self_test(python)
     print(f"    OK - the server answered with {len(tools)} tools")
 
-    step('4/4  Registering "solidworks" in Claude Desktop')
     entry = {"command": str(python), "args": [str(SERVER_SCRIPT)]}
-    updated = 0
-    for path in claude_config_paths():
-        try:
-            print(f"    {register(path, entry)}: {path}")
-            updated += 1
-        except (OSError, ValueError) as exc:
-            print(f"    could not update {path}: {exc}")
-    if not updated:
-        print("\nClaude Desktop could not be configured automatically. In Claude, open")
-        print("Settings > Developer > Edit Config and add this to claude_desktop_config.json:")
-        print(json.dumps({"mcpServers": {SERVER_NAME: entry}}, indent=2))
-        return 1
+    registered = 0
+    step('4/5  Registering "solidworks" in Claude Desktop')
+    if args.no_desktop:
+        print("    skipped (--no-desktop)")
+    else:
+        for path in desktop_paths:
+            try:
+                print(f"    {register(path, entry)}: {path}")
+                registered += 1
+            except (OSError, ValueError) as exc:
+                print(f"    could not update {path}: {exc}")
+        if not registered:
+            print("    Claude Desktop could not be configured automatically. In Claude, open")
+            print("    Settings > Developer > Edit Config and add this to claude_desktop_config.json:")
+            print(json.dumps({"mcpServers": {SERVER_NAME: entry}}, indent=2))
 
+    step("5/5  Claude Code and the solidworks-design skill")
+    if cli:
+        try:
+            print(f"    Claude Code: {register_claude_code(cli, entry)}")
+            registered += 1
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            print(f"    Claude Code: could not register it ({exc})")
+    elif args.no_claude_code:
+        print("    Claude Code: skipped (--no-claude-code)")
+    else:
+        print("    Claude Code: not found, skipped. To add it later:")
+        print(f'      claude mcp add --scope user {SERVER_NAME} -- "{python}" "{SERVER_SCRIPT}"')
+    if args.no_skill:
+        print("    skill: skipped (--no-skill)")
+    elif not (SKILL_DIR / "SKILL.md").is_file():
+        print(f"    skill: {SKILL_DIR} is missing, skipped")
+    else:
+        if args.skills_dir or cli or (Path.home() / ".claude").is_dir():
+            print(f"    skill for Claude Code: {install_skill(skills_dir)}")
+        print(f"    skill for Claude Desktop / claude.ai: {build_skill_zip()}")
+        print("      (upload it under Settings > Capabilities > Skills, or ask Claude in Cowork to save the")
+        print(f"      skill from {SKILL_DIR / 'SKILL.md'})")
+
+    if not registered:
+        print("\nThe server works but nothing was registered - see the messages above.")
+        return 1
     print("\nAll set. Next:")
     print("  1. Open SolidWorks.")
-    print("  2. Start Claude Desktop (if it is open, quit it from its tray icon first).")
+    print("  2. Fully quit Claude Desktop (tray icon > Quit) and start it again;")
+    print("     in Claude Code, start a new session.")
     print('  3. Ask Claude: "Connect to SolidWorks".')
     return 0
 
@@ -288,7 +477,7 @@ if __name__ == "__main__":
         pass
     sys.stdout = _Tee(sys.stdout, LOG_FILE)
     try:
-        sys.exit(main())
+        sys.exit(main(sys.argv[1:]))
     except subprocess.CalledProcessError as exc:
         print(f"\nSetup failed: {' '.join(map(str, exc.cmd))} exited with code {exc.returncode}.")
         sys.exit(1)

@@ -14,6 +14,42 @@
 >
 > Based on [alisamsam/Solidworks-MCP](https://github.com/alisamsam/Solidworks-MCP) (MIT, Samsaam Ali Baig), with a one-click Windows installer, SolidWorks 2025 COM fixes and support for localized (e.g. Korean) SolidWorks.
 
+## 설치: Claude에게 한 마디 · Install: just ask Claude
+
+> **"https://github.com/hayward2007/solidworks-mcp 설치해줘"** · *"Install https://github.com/hayward2007/solidworks-mcp"*
+
+Claude Code(Windows)는 바로 설치하고, Claude Desktop(Cowork)은 더블클릭할 설치 파일을 주고 설계 스킬 저장 카드를 띄워요. 직접 하려면 PowerShell에 이 한 줄을 붙여 넣으세요.<br>
+Claude Code on Windows installs it right away; Claude Desktop (Cowork) gives you an installer to double-click and offers the design skill to save. To do it yourself, paste this line into PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1 | iex
+```
+
+끝나면 SolidWorks를 열고, Claude Desktop을 트레이 아이콘 → 종료(Quit)로 완전히 끈 뒤 다시 켜세요.<br>
+Then open SolidWorks, fully quit Claude Desktop (tray icon → Quit) and start it again.
+
+<details>
+<summary><b>For Claude: how to install this repository</b></summary>
+
+The server has to run on the user's Windows PC next to SolidWorks; never install it inside a Linux VM or a cloud container.
+
+1. **If you can run commands on that PC** (Claude Code on Windows; from WSL call `powershell.exe`), run:
+
+   ```
+   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1 | iex"
+   ```
+
+   It puts the code in `%USERPROFILE%\solidworks-mcp` (or updates it), creates `.venv`, installs the requirements, self-tests the server (34 tools), registers `solidworks` in Claude Desktop and in Claude Code (`claude mcp add --scope user`) and copies the skill to `~/.claude/skills/solidworks-design`. The first run takes a few minutes; success ends with `All set`.
+   - If it reports `Python 3.10 or newer (64-bit) was not found`, ask the user, then install Python 3.13 with winget and continue:
+     `powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1))) -InstallPython"`
+   - Other options go in the same place: `-InstallDir <path>`, `-NoClaudeDesktop`, `-NoClaudeCode`, `-NoSkill`, `-Uninstall`.
+2. **If you cannot run Windows programs** (Claude Desktop / Cowork, where your shell is a Linux VM or a cloud container):
+   - Download `https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/setup_windows.bat`, save it into a folder the user connected (or send it as a file) and ask them to double-click it. It runs the same installer and asks before installing Python. Pasting the PowerShell line above works too.
+   - Offer the design skill: propose the contents of `skills/solidworks-design/SKILL.md` as a new skill named `solidworks-design` for the user to save. Cowork does not pass MCP server instructions to the model; this skill brings in the working rules.
+3. **Afterwards** ask the user to open SolidWorks and to fully quit Claude Desktop (tray icon → Quit) and start it again; in Claude Code a new session is enough. The `solidworks` tools should then be available (`knowledge_get("agent-guide")` is a quick check). If they are not, read `setup_mcp.log` in the install folder and run the installer again while Claude Desktop is closed.
+
+</details>
+
 ---
 
 ## 한국어
@@ -56,7 +92,7 @@ SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 �
 |---|---|
 | 설치 오류 수정 | `requirements.txt`에서 PyPI에 없는 `asyncio-compat`를 뺐어요. 이 줄 때문에 `pip install -r requirements.txt`가 항상 실패했어요. |
 | 시작 오류 수정 | `mcp>=1.0.0,<2`로 고정했어요. mcp 2.x는 서버가 쓰는 `Server.list_tools()` / `call_tool()` 데코레이터를 없애서, 설치되면 서버가 `AttributeError`로 바로 꺼져요. |
-| 원클릭 설치 | `setup_windows.bat` + `setup_mcp.py`: 가상환경 생성, 패키지 설치, 서버 자가 진단, Claude Desktop 자동 등록까지 한 번에 해요. |
+| 한 줄 설치 | `install.ps1`(PowerShell 한 줄, 또는 `setup_windows.bat` 더블클릭) + `setup_mcp.py`: 코드 받기, Python 찾기(없으면 winget 설치 제안), 가상환경, 패키지, 서버 자가 진단, Claude Desktop·Claude Code 등록, 설계 스킬 설치까지 한 번에 해요. Claude에게 "설치해줘"라고 하면 대신 실행해요. |
 | SolidWorks 2025 COM 호환성 | `automation/base.py`에 `_com_value()`를 추가해서 다음을 고쳤어요. `list_open_documents`("구성원이 없습니다" 오류), `get_document_info`(`'int' object is not callable` 오류), `list_features`(첫 피처 1개만 나오고 억제 상태가 항상 false). |
 | 한국어 SolidWorks 지원 | `create_sketch`가 "Front Plane"만 찾아서 한국어 UI(정면/윗면/우측면)에서 실패하던 문제를 고쳤어요. 이름으로 못 찾으면 기본 평면 순서로 실제 이름을 찾아요. |
 | 저장소 정리 | `.env` 제외(원본에는 API 키가 들어 있었고, 서버는 이 파일을 쓰지 않아요), `.venv/` 무시, `.bat` 파일 줄바꿈(CRLF) 고정. |
@@ -65,13 +101,14 @@ SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 �
 | 기어 생성기 | `gear_design`, `create_gear`: 스퍼·헬리컬·헤링본·내접·랙·직선/스파이럴 베벨·웜·웜휠을 규격 공식으로 만들고 부피와 물림 간섭으로 스스로 검증해요. |
 | 토폴로지 최적화 | `topology_optimize`: ToPy를 Python 3로 옮긴 2D/3D 강성·메커니즘 최적화, 결과를 SolidWorks 파트로 만들어요. |
 | 에이전트 가이드 | 작업 흐름, 토큰 절약, 근거 규칙을 서버 instructions로 매 세션 자동 적용해요. |
+| 설계 스킬 | `skills/solidworks-design`: Cowork처럼 서버 instructions를 넘기지 않는 클라이언트에서도 같은 작업 규칙을 불러오는 Claude 스킬이에요. 도구 설명에도 `knowledge_get("agent-guide")` 안내를 넣었어요. |
 | 출력 토큰 절감 | `execute_python` 결과 중복 제거, JSON 압축 출력(한글을 `\u` 이스케이프 없이), 트레이스백을 스크립트 부분만 남겨요. |
 
 ### 요구 사항
 
 - Windows 10 / 11 (64비트)
 - SolidWorks 2023–2025 (설치 및 라이선스 필요)
-- Python 3.10 이상: python.org 설치판 또는 Python Install Manager(`py`) 모두 돼요
+- Python 3.10 이상(64비트): python.org 설치판 또는 Python Install Manager(`py`) 모두 돼요. 없으면 설치 스크립트가 winget으로 Python 3.13을 설치해 줄 수 있어요
 - Claude Desktop 또는 Claude Code
 - 처음 설치할 때 인터넷 연결 (pip 패키지 다운로드, 토폴로지 최적화용 numpy·scipy 포함 약 60 MB)
 
@@ -79,33 +116,36 @@ SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 �
 
 ### 빠른 시작
 
-1. **저장소 받기**
+가장 쉬운 방법은 맨 위처럼 Claude에게 설치해 달라고 하는 거예요. 직접 하려면:
+
+1. **설치 스크립트 실행**: PowerShell에 한 줄을 붙여 넣으세요.
 
    ```powershell
-   git clone https://github.com/hayward2007/solidworks-mcp.git
-   cd solidworks-mcp
+   irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1 | iex
    ```
 
-   ZIP으로 받아서 압축을 풀어도 돼요. 폴더 경로가 Claude 설정에 기록되니까, 나중에 폴더를 옮기면 설치를 다시 실행하세요.
+   코드는 `%USERPROFILE%\solidworks-mcp`에 받아요. 저장소를 직접 받았다면(`git clone https://github.com/hayward2007/solidworks-mcp.git` 또는 ZIP) 그 폴더의 **`setup_windows.bat`을 더블클릭**해도 돼요. 마지막에 `All set`이 나오면 끝이에요. 폴더 경로가 Claude 설정에 기록되니까, 나중에 폴더를 옮기면 다시 실행하세요.
 
-2. **Claude Desktop 완전히 종료**: 작업 표시줄 오른쪽 아래 트레이(**^** 안쪽일 수 있음)의 Claude 아이콘을 우클릭해서 **종료(Quit)** 를 누르세요. 창만 닫으면 백그라운드에서 계속 돌아가서 새 설정을 읽지 않아요.
+2. **Claude Desktop 완전히 종료 후 다시 실행**: 작업 표시줄 오른쪽 아래 트레이(**^** 안쪽일 수 있음)의 Claude 아이콘을 우클릭해서 **종료(Quit)** 를 누르고 다시 켜세요. 창만 닫으면 백그라운드에서 계속 돌아가서 새 설정을 읽지 않아요. Claude Code는 새 세션을 시작하면 돼요.
 
-3. **`setup_windows.bat` 더블클릭** (또는 터미널에서 `py setup_mcp.py`). Claude가 아직 실행 중이면 스크립트가 종료하라고 알려 줘요. 마지막에 `All set`이 나오면 끝이에요.
-
-4. **SolidWorks를 열고 Claude Desktop 실행** → Claude에게 "SolidWorks에 연결해줘"라고 말하세요.
+3. **SolidWorks를 열고** Claude에게 "SolidWorks에 연결해줘"라고 말하세요.
 
 Claude의 설정(Settings) → 개발자(Developer)에서 `solidworks` 서버가 running으로 보이면 정상이에요.
 
+**Cowork를 쓴다면 설계 스킬도 저장하세요.** Cowork는 서버 instructions(작업 규칙)를 모델에 넘기지 않아서, `solidworks-design` 스킬이 그 규칙을 불러와요. Cowork에서 Claude에게 "https://github.com/hayward2007/solidworks-mcp 의 solidworks-design 스킬 저장해줘"라고 하면 저장 카드가 떠요. claude.ai에서는 설치 스크립트가 만든 `dist\solidworks-design.zip`을 설정 → Capabilities → Skills에서 올려도 돼요. Claude Code에는 설치 스크립트가 `~/.claude/skills`에 넣어 줘요.
+
 ### 설치 스크립트가 하는 일
 
-1. Python 3.10 이상을 찾아요: `py` 런처 → PATH의 `python` → `%LOCALAPPDATA%\Python\pythoncore-3.*`, `%LOCALAPPDATA%\Programs\Python\Python3*`, `%ProgramFiles%\Python3*` 순서.
-2. 프로젝트 폴더에 가상환경 `.venv`를 만들어요 (이미 있으면 다시 써요).
-3. `requirements.txt`를 설치해요 (`mcp` 1.x, `pywin32`, `python-dotenv`, `Pillow`).
-4. 서버 자가 진단: Claude Desktop과 같은 방식(stdio)으로 서버를 띄워서 MCP 초기화와 도구 목록을 확인해요.
-5. Claude Desktop 설정 파일에 `solidworks` 서버를 등록해요. 다른 서버와 설정은 그대로 두고, 바꾸기 전에 `claude_desktop_config.json.bak-날짜-시간` 백업을 만들어요. Microsoft Store(MSIX) 설치판의 설정 위치도 함께 갱신해요.
-6. 화면에 나온 내용을 `setup_mcp.log`에 저장해요.
+1. 코드를 받아요: `%USERPROFILE%\solidworks-mcp`에 `git clone`(git이 없으면 GitHub ZIP)하고, 이미 있으면 업데이트해요. 저장소 안의 `setup_windows.bat`으로 실행하면 그 폴더를 그대로 써요.
+2. 64비트 Python 3.10 이상을 찾아요: `py -0p` 목록 → `py -3` → PATH의 `python` → `%LOCALAPPDATA%\Python\pythoncore-3.*`, `%LOCALAPPDATA%\Programs\Python\Python3*`, `%ProgramFiles%\Python3*` 순서예요. numpy·scipy·pywin32 휠이 있는 3.10–3.14 중 가장 새 버전을 골라요. 없으면 winget으로 Python 3.13을 설치할지 물어봐요(`-InstallPython`이면 묻지 않고 설치).
+3. 프로젝트 폴더에 가상환경 `.venv`를 만들어요 (이미 있으면 다시 써요).
+4. `requirements.txt`를 설치해요 (`mcp` 1.x, `pywin32`, `python-dotenv`, `Pillow`, `numpy`, `scipy`).
+5. 서버 자가 진단: Claude Desktop과 같은 방식(stdio)으로 서버를 띄워서 MCP 초기화와 도구 목록(34개)을 확인해요.
+6. Claude Desktop 설정 파일에 `solidworks` 서버를 등록해요. 다른 서버와 설정은 그대로 두고, 바꾸기 전에 `claude_desktop_config.json.bak-날짜-시간` 백업을 만들어요. Microsoft Store(MSIX) 설치판의 설정 위치도 함께 갱신해요.
+7. Claude Code(`claude` CLI)가 있으면 `claude mcp add --scope user`로 등록하고 설계 스킬을 `~/.claude/skills/solidworks-design`에 복사해요. Claude Desktop·claude.ai에 올릴 `dist\solidworks-design.zip`도 만들어요.
+8. 화면에 나온 내용을 `setup_mcp.log`에 저장해요.
 
-여러 번 실행해도 안전해요. 이미 등록돼 있으면 `already up to date`가 나와요.
+여러 번 실행해도 안전해요. 이미 등록돼 있으면 `already up to date`가 나와요. 옵션: `-InstallDir 경로`, `-InstallPython`, `-NoClaudeDesktop`, `-NoClaudeCode`, `-NoSkill`, `-Uninstall`. `setup_windows.bat`에도 그대로 넘길 수 있어요(예: `setup_windows.bat -Uninstall`).
 
 ### 수동 설정
 
@@ -164,7 +204,7 @@ Claude는 보통 `create_sketch` → `draw_*` → `close_sketch` → `extrude_sk
 
 ### Text-to-CAD 작업 흐름
 
-짧거나 모호한 요청도 에이전트가 사양으로 정리하고, 모델을 직접 보고 재면서 빠르게 반복하게 하는 흐름이에요. 서버 instructions(`solidworks_mcp/instructions.md`)로 매 세션 자동 적용돼요.
+짧거나 모호한 요청도 에이전트가 사양으로 정리하고, 모델을 직접 보고 재면서 빠르게 반복하게 하는 흐름이에요. 서버 instructions(`solidworks_mcp/instructions.md`)로 매 세션 자동 적용돼요(Cowork는 `solidworks-design` 스킬로).
 
 1. **사양 정리**: 목적, 크기, 연결부, 하중·동작, 공정·재료를 10줄 이내로 정리해요. 모든 수치에 근거를 붙여요. 순서는 [req] 요구 사항·기존 형상 > [std] 규격 > [calc] 계산 > [cat] 카탈로그·확인된 미스미 품번 > [dfm] 공정 규칙 > [heur] 경험칙 > [neutral] 근거가 없을 때의 중립값(대칭, 1:1, 같은 간격, R10 표준수, 정수 mm)이에요.
 2. **필요한 지식만 조회**: `knowledge_search`로 찾고 `knowledge_get`으로 한 섹션만 읽어요.
@@ -320,7 +360,8 @@ result = report()                        # 오류, 바디, 경계 상자, 질량
 1. Claude를 트레이 아이콘 → 종료(Quit)로 완전히 끄고 다시 실행하세요.
 2. 설정 → 개발자에서 `solidworks` 상태를 확인하세요.
 3. `setup_mcp.log`에서 `could not update` 같은 메시지가 있는지 보세요.
-4. Claude의 MCP 로그를 보세요: `%APPDATA%\Claude\logs\mcp-server-solidworks.log` (MSIX 설치판은 `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\logs\`).
+4. Claude를 끈 상태에서 설치를 한 번 더 실행해 보세요.
+5. Claude의 MCP 로그를 보세요: `%APPDATA%\Claude\logs\mcp-server-solidworks.log` (MSIX 설치판은 `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\logs\`).
 
 **`pip install -r requirements.txt`가 실패해요**: 이 저장소의 `requirements.txt`를 쓰고 있는지 확인하세요 (`asyncio-compat` 없음, `mcp<2`).
 
@@ -334,8 +375,8 @@ result = report()                        # 오류, 바디, 경계 상자, 질량
 
 ### 업데이트와 제거
 
-- 업데이트: `git pull` 후 `setup_windows.bat`을 다시 실행하세요 (새 패키지가 설치돼요).
-- 제거: Claude 설정 파일에서 `solidworks` 항목을 지우고 `.venv` 폴더를 삭제하세요. 설치 전 설정은 `claude_desktop_config.json.bak-*` 백업에 있어요.
+- 업데이트: 설치할 때의 PowerShell 한 줄을 다시 실행하거나, 저장소에서 `git pull` 후 `setup_windows.bat`을 실행하세요 (새 패키지가 설치돼요).
+- 제거: 명령 프롬프트에서 `setup_windows.bat -Uninstall`(또는 `install.ps1 -Uninstall`)을 실행하면 Claude Desktop·Claude Code 등록과 스킬을 지워요. 그다음 폴더를 삭제하세요. 설치 전 설정은 `claude_desktop_config.json.bak-*` 백업에 있어요. Claude 계정에 저장한 스킬은 Claude 설정에서 지우세요.
 
 ### 로드맵
 
@@ -355,8 +396,10 @@ SolidWorks 지원을 가장 먼저 해요. 진행 순서:
 
 ```
 Solidworks-MCP/
-├── setup_windows.bat          # 원클릭 설치 (더블클릭)
-├── setup_mcp.py               # 설치 로직: .venv, 패키지, 자가 진단, Claude 등록
+├── install.ps1                # 한 줄 설치 (irm ... | iex): 코드 받기, Python 찾기, setup_mcp.py 실행
+├── setup_windows.bat          # 원클릭 설치 (더블클릭하면 install.ps1 실행)
+├── setup_mcp.py               # 설치 로직: .venv, 패키지, 자가 진단, Claude Desktop·Claude Code 등록, 스킬
+├── skills/solidworks-design/  # Claude 스킬: 설계 작업 규칙 (서버 instructions를 안 넘기는 Cowork 같은 클라이언트용)
 ├── solidworks_mcp_server.py   # MCP 서버 진입점
 ├── requirements.txt
 ├── knowledge/                 # 설계 지식 베이스 (Markdown 노트)
@@ -368,7 +411,7 @@ Solidworks-MCP/
 │   ├── com.py                 # late binding COM 도우미 (val, call, arr, plane ...)
 │   ├── gears/                 # 기어: geometry(인볼류트), bevel, build(SolidWorks), api(도구 인자)
 │   ├── topopt/                # 토폴로지 최적화 (ToPy 포팅): problem, topology, export, run, cad
-│   ├── tests/                 # 기어·최적화 단위 테스트 (python -m unittest solidworks_mcp.tests.test_gears ...)
+│   ├── tests/                 # 기어·최적화·설치 단위 테스트 (python -m unittest solidworks_mcp.tests.test_gears ...)
 │   ├── config.py, config.json # 설정
 │   ├── constants.py           # SolidWorks 상수
 │   ├── automation/            # base(연결), documents, sketches, features
@@ -426,7 +469,7 @@ SolidWorks MCP Server is a [Model Context Protocol](https://modelcontextprotocol
 |---|---|
 | Install fix | Removed `asyncio-compat` from `requirements.txt`. It does not exist on PyPI, so `pip install -r requirements.txt` always failed. |
 | Startup fix | Pinned `mcp>=1.0.0,<2`. mcp 2.x removed the `Server.list_tools()` / `call_tool()` decorators this server uses, so the server crashed on startup with `AttributeError`. |
-| One-click setup | `setup_windows.bat` + `setup_mcp.py` create the virtual environment, install packages, self-test the server and register it with Claude Desktop. |
+| One-line install | `install.ps1` (one PowerShell line, or double-click `setup_windows.bat`) + `setup_mcp.py` get the code, find Python (or offer to install it with winget), create the virtual environment, install packages, self-test the server, register it with Claude Desktop and Claude Code and install the design skill. Ask Claude to install the repository and it runs this for you. |
 | SolidWorks 2025 COM | Added `_com_value()` in `automation/base.py` and fixed `list_open_documents` ("Member not found"), `get_document_info` (`'int' object is not callable`) and `list_features` (returned only the first feature; suppression state was always false). |
 | Localized SolidWorks | `create_sketch` only looked for "Front Plane", so it failed in non-English UIs (Korean: 정면/윗면/우측면). It now falls back to the default planes' actual names. |
 | Repository cleanup | `.env` removed (the original contained an API key; the server does not use it), `.venv/` ignored, CRLF line endings enforced for `.bat` files. |
@@ -435,13 +478,14 @@ SolidWorks MCP Server is a [Model Context Protocol](https://modelcontextprotocol
 | Gear generators | `gear_design`, `create_gear`: spur, helical, herringbone, internal, rack, straight/spiral bevel, worm and worm wheel from the standards' formulas, self-checked by volume and mesh interference. |
 | Topology optimization | `topology_optimize`: ToPy ported to Python 3 for 2D/3D stiffness and compliant-mechanism problems, results turned into SolidWorks parts. |
 | Agent guide | Workflow, token rules and rationale policy are sent as MCP server instructions in every session. |
+| Design skill | `skills/solidworks-design`: a Claude skill that brings the same working rules to clients that do not pass server instructions on, such as Cowork. The tool descriptions also point to `knowledge_get("agent-guide")`. |
 | Fewer output tokens | No duplicated `execute_python` output, compact JSON without `\u` escapes, tracebacks trimmed to the script frames. |
 
 ### Requirements
 
 - Windows 10 / 11 (64-bit)
 - SolidWorks 2023–2025, installed and licensed
-- Python 3.10 or newer: the python.org installer or the Python Install Manager (`py`)
+- Python 3.10 or newer (64-bit): the python.org installer or the Python Install Manager (`py`). Without one, the installer can install Python 3.13 with winget
 - Claude Desktop or Claude Code
 - Internet access for the first install (pip packages, about 60 MB including numpy and scipy for topology optimization)
 
@@ -449,33 +493,36 @@ Tested with SolidWorks 2025 (revision 33.5.0, Korean UI), Python 3.14.7 and Clau
 
 ### Quick start
 
-1. **Get the code**
+The easiest way is to ask Claude to install it, as shown at the top. To do it yourself:
+
+1. **Run the installer**: paste this line into PowerShell.
 
    ```powershell
-   git clone https://github.com/hayward2007/solidworks-mcp.git
-   cd solidworks-mcp
+   irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1 | iex
    ```
 
-   A ZIP download works too. The folder path is written into Claude's config, so run the installer again if you move the folder later.
+   The code goes to `%USERPROFILE%\solidworks-mcp`. If you downloaded the repository yourself (`git clone https://github.com/hayward2007/solidworks-mcp.git` or a ZIP), you can **double-click `setup_windows.bat`** in it instead. You are done when it prints `All set`. The folder path is written into Claude's config, so run it again if you move the folder later.
 
-2. **Quit Claude Desktop completely**: right-click the Claude icon in the system tray (bottom-right, possibly under the **^** arrow) and choose **Quit**. Closing the window leaves it running in the background, and it will not read the new config.
+2. **Quit Claude Desktop completely and start it again**: right-click the Claude icon in the system tray (bottom-right, possibly under the **^** arrow), choose **Quit**, then start Claude again. Closing the window leaves it running in the background, and it will not read the new config. In Claude Code, start a new session.
 
-3. **Double-click `setup_windows.bat`** (or run `py setup_mcp.py` in a terminal). If Claude is still running, the script asks you to quit it. You are done when it prints `All set`.
-
-4. **Open SolidWorks, start Claude Desktop**, and ask Claude: "Connect to SolidWorks".
+3. **Open SolidWorks** and ask Claude: "Connect to SolidWorks".
 
 In Claude, Settings → Developer should show the `solidworks` server as running.
 
+**Using Cowork? Save the design skill too.** Cowork does not pass the server instructions (working rules) to the model; the `solidworks-design` skill brings them in. In Cowork, ask Claude to "save the solidworks-design skill from https://github.com/hayward2007/solidworks-mcp" and save the card it shows. On claude.ai you can upload the `dist\solidworks-design.zip` the installer writes under Settings → Capabilities → Skills. For Claude Code the installer puts the skill into `~/.claude/skills`.
+
 ### What the installer does
 
-1. Finds Python 3.10+: the `py` launcher, then `python` on PATH, then `%LOCALAPPDATA%\Python\pythoncore-3.*`, `%LOCALAPPDATA%\Programs\Python\Python3*` and `%ProgramFiles%\Python3*`.
-2. Creates a virtual environment in `.venv` inside the project folder (reuses a working one).
-3. Installs `requirements.txt` (`mcp` 1.x, `pywin32`, `python-dotenv`, `Pillow`).
-4. Self-test: starts the server over stdio, exactly like Claude Desktop does, and checks the MCP handshake and the tool list.
-5. Registers the `solidworks` server in Claude Desktop's config. Other servers and settings are kept, and a `claude_desktop_config.json.bak-date-time` backup is written before any change. The Microsoft Store (MSIX) config location is updated too.
-6. Saves everything it printed to `setup_mcp.log`.
+1. Gets the code: `git clone` into `%USERPROFILE%\solidworks-mcp` (the GitHub ZIP when git is missing), or updates an existing copy. Started from `setup_windows.bat` inside a copy of the repository, it uses that folder as it is.
+2. Finds a 64-bit Python 3.10+: the `py -0p` list, `py -3`, `python` on PATH, then `%LOCALAPPDATA%\Python\pythoncore-3.*`, `%LOCALAPPDATA%\Programs\Python\Python3*` and `%ProgramFiles%\Python3*`. It picks the newest of 3.10–3.14, which numpy, scipy and pywin32 ship wheels for. Without one it offers to install Python 3.13 with winget (`-InstallPython` installs it without asking).
+3. Creates a virtual environment in `.venv` inside the project folder (reuses a working one).
+4. Installs `requirements.txt` (`mcp` 1.x, `pywin32`, `python-dotenv`, `Pillow`, `numpy`, `scipy`).
+5. Self-test: starts the server over stdio, exactly like Claude Desktop does, and checks the MCP handshake and the tool list (34 tools).
+6. Registers the `solidworks` server in Claude Desktop's config. Other servers and settings are kept, and a `claude_desktop_config.json.bak-date-time` backup is written before any change. The Microsoft Store (MSIX) config location is updated too.
+7. If Claude Code (the `claude` CLI) is installed, registers the server with `claude mcp add --scope user` and copies the design skill to `~/.claude/skills/solidworks-design`. It also writes `dist\solidworks-design.zip` for uploading the skill to Claude Desktop / claude.ai.
+8. Saves everything it printed to `setup_mcp.log`.
 
-It is safe to run again; an existing registration shows `already up to date`.
+It is safe to run again; an existing registration shows `already up to date`. Options: `-InstallDir <path>`, `-InstallPython`, `-NoClaudeDesktop`, `-NoClaudeCode`, `-NoSkill`, `-Uninstall`; `setup_windows.bat` passes them on (e.g. `setup_windows.bat -Uninstall`).
 
 ### Manual setup
 
@@ -534,7 +581,7 @@ Claude typically chains `create_sketch` → `draw_*` → `close_sketch` → `ext
 
 ### Text-to-CAD workflow
 
-A loop that lets the agent turn short or vague requests into a spec, then build, look and measure, and iterate quickly. It is sent to the agent in every session as the server instructions (`solidworks_mcp/instructions.md`).
+A loop that lets the agent turn short or vague requests into a spec, then build, look and measure, and iterate quickly. It is sent to the agent in every session as the server instructions (`solidworks_mcp/instructions.md`); in Cowork the `solidworks-design` skill brings it in.
 
 1. **Spec**: purpose, envelope, interfaces, loads/motion, process and material in at most ~10 lines. Every number gets a basis, in this order: [req] requirement or existing geometry > [std] standard > [calc] calculation > [cat] catalogue or user-verified MISUMI part > [dfm] process rule > [heur] rule of thumb > [neutral] a neutral value when nothing else applies (symmetry, 1:1, equal spacing, R10 preferred numbers, whole mm).
 2. **Look up only what is needed**: `knowledge_search`, then `knowledge_get` for one section.
@@ -690,7 +737,8 @@ Edit `solidworks_mcp/config.json` to change behavior without touching code, then
 1. Quit Claude from the tray icon (Quit) and start it again.
 2. Check the `solidworks` server under Settings → Developer.
 3. Look for `could not update` messages in `setup_mcp.log`.
-4. Read Claude's MCP log: `%APPDATA%\Claude\logs\mcp-server-solidworks.log` (MSIX build: `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\logs\`).
+4. Run the installer once more while Claude is closed.
+5. Read Claude's MCP log: `%APPDATA%\Claude\logs\mcp-server-solidworks.log` (MSIX build: `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\logs\`).
 
 **`pip install -r requirements.txt` fails**: make sure you are using this repository's `requirements.txt` (no `asyncio-compat`, `mcp<2`).
 
@@ -704,8 +752,8 @@ Edit `solidworks_mcp/config.json` to change behavior without touching code, then
 
 ### Updating and uninstalling
 
-- Update: `git pull`, then run `setup_windows.bat` again (installs new packages).
-- Uninstall: remove the `solidworks` entry from Claude's config and delete the `.venv` folder. Your pre-install config is in the `claude_desktop_config.json.bak-*` backup.
+- Update: run the PowerShell line again, or `git pull` in your copy and run `setup_windows.bat` (installs new packages).
+- Uninstall: run `setup_windows.bat -Uninstall` (or `install.ps1 -Uninstall`) in a command prompt; it removes the Claude Desktop and Claude Code registrations and the skill. Then delete the folder. Your pre-install config is in the `claude_desktop_config.json.bak-*` backup. A skill saved in your Claude account is removed in Claude's settings.
 
 ### Roadmap
 
@@ -725,8 +773,10 @@ Thermal and CFD studies are out of scope for now (SOLIDWORKS Flow Simulation res
 
 ```
 Solidworks-MCP/
-├── setup_windows.bat          # one-click installer (double-click)
-├── setup_mcp.py               # installer logic: .venv, packages, self-test, Claude registration
+├── install.ps1                # one-line installer (irm ... | iex): gets the code, finds Python, runs setup_mcp.py
+├── setup_windows.bat          # one-click installer (double-click; runs install.ps1)
+├── setup_mcp.py               # installer logic: .venv, packages, self-test, Claude Desktop and Claude Code registration, skill
+├── skills/solidworks-design/  # Claude skill: design working rules (for clients such as Cowork that do not pass server instructions on)
 ├── solidworks_mcp_server.py   # MCP server entry point
 ├── requirements.txt
 ├── knowledge/                 # design knowledge base (Markdown notes)
@@ -738,7 +788,7 @@ Solidworks-MCP/
 │   ├── com.py                 # late-binding COM helpers (val, call, arr, plane, ...)
 │   ├── gears/                 # gears: geometry (involute), bevel, build (SolidWorks), api (tool arguments)
 │   ├── topopt/                # topology optimization (ToPy port): problem, topology, export, run, cad
-│   ├── tests/                 # gear and optimizer unit tests (python -m unittest solidworks_mcp.tests.test_gears ...)
+│   ├── tests/                 # gear, optimizer and installer unit tests (python -m unittest solidworks_mcp.tests.test_gears ...)
 │   ├── config.py, config.json # configuration
 │   ├── constants.py           # SolidWorks constants
 │   ├── automation/            # base (connection), documents, sketches, features

@@ -2,3 +2,7 @@
 * text=auto
 # Windows batch files must keep CRLF line endings on every platform
 *.bat text eol=crlf
+# PowerShell scripts: CRLF in the working tree like the batch files
+*.ps1 text eol=crlf
+# Skills keep LF so their YAML front matter parses in every Claude client
+skills/** text eol=lf
