@@ -111,7 +111,7 @@ _TOPOLOGY_SCHEMA = {"type": "object", "required": [], "properties": {
         "material {E, nu, density}; iterations, filter_radius, penalty")},
     "tpd": {"type": "string", "description": "ToPy problem definition text or file path"},
     "job": {"type": "string", "description": "job id to poll / build"},
-    "wait": {"type": "number", "default": 40, "description": "seconds to wait in this call (max 50)"},
+    "wait": {"type": "number", "default": 25, "description": "seconds to wait in this call (max 30); poll longer jobs with job"},
     "build": {"type": "boolean", "default": False, "description": "create the SolidWorks part from a finished job"},
     "thickness": {"type": "number", "description": "plate thickness for build (default: problem thickness)"},
     "max_time": {"type": "number", "default": 900, "description": "stop the optimisation after this many seconds"},
@@ -387,7 +387,8 @@ async def list_tools() -> list[Tool]:
             description=("Run Python with SolidWorks API access, one modeling stage per call. Names: sw, doc, automation, "
                          "val, call, arr, strings, byref_int, byref_bool, select, plane, feats, feat, active, report, "
                          "render, store, mm, deg, math, json. print() output and the variable 'result' are returned; "
-                         "render() attaches a small image. API units are metres and radians."),
+                         "render() attaches a small image. API units are metres and radians. Before a design task "
+                         "read knowledge_get('agent-guide') once: build-verify loop, basis tags, token rules."),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -446,9 +447,11 @@ async def list_tools() -> list[Tool]:
         # Design knowledge base
         Tool(
             name="knowledge_search",
-            description=("Search the design knowledge base: gears, bearings, fasteners, fits, shafts and keys, "
-                         "materials, DFM, design policy, SolidWorks API recipes, agent guide. Returns short "
-                         "snippets with ids (Korean or English keywords)."),
+            description=("Search the design knowledge base: gears, gear generators, topology optimization, bearings, "
+                         "fasteners, fits, shafts and keys, materials, DFM, design policy, SolidWorks API recipes, "
+                         "agent guide. Returns short snippets with ids (Korean or English keywords). Start every design "
+                         "task with knowledge_get('agent-guide') and knowledge_get('design-policy#basis-ladder'): some "
+                         "clients do not pass the server instructions on."),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -958,7 +961,7 @@ def _topology_handler(arguments: dict) -> Dict:
         job = _TOPO_DIR / job_id
         if not job.is_dir():
             return _fail(f"unknown job {job_id}")
-        wait = min(float(arguments.get("wait", 40) or 0), 50.0)
+        wait = min(float(arguments.get("wait", 25) or 0), 30.0)     # stay well inside client time-outs
         t0 = time.time()
 
         def read(name):

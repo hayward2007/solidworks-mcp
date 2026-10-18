@@ -8,7 +8,7 @@ summary: Setting up 2D/3D minimum-compliance and compliant-mechanism problems in
 
 ## What it does
 - SIMP density method (Python 3 / scipy port of ToPy, verified against Sigmund's 99-line code): minimum compliance (maximum stiffness for a volume budget) or compliant mechanisms, 2D plane-stress plates or 3D solids. Thermal and CFD problems are not included.
-- Runs as a background job; `topology_optimize` waits up to `wait` s (default 40), then poll with `job`. `build: true` creates the part: 2D -> splines through the 0.5-density contour, extruded by the thickness (volume checked); 3D -> STL imported as a mesh solid body (reference geometry to remodel with features).
+- Runs as a background job; `topology_optimize` waits up to `wait` s (default 25, max 30), then poll with `job`. `build: true` creates the part: 2D -> splines through the 0.5-density contour, extruded by the thickness (volume checked); 3D -> STL imported as a mesh solid body (reference geometry to remodel with features).
 
 ## Problem spec (mm, origin at the lower-left(-back) corner, y up)
 ```json
