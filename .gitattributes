@@ -1,0 +1,4 @@
+# Store text files with LF in the repository; Git converts on checkout
+* text=auto
+# Windows batch files must keep CRLF line endings on every platform
+*.bat text eol=crlf

@@ -1,0 +1,9 @@
+SolidWorks MCP: drive SolidWorks through its COM API. Work in this loop and keep token use low.
+
+1. Spec first (max ~10 lines): purpose, envelope, interfaces, loads/motion, process + material. Tag every number with its basis: [req] requirement or existing geometry > [std] ISO/KS/JIS > [calc] calculation > [cat] catalogue / user-verified MISUMI part > [dfm] process rule > [heur] rule of thumb > [neutral] symmetry, 1:1, equal spacing, Renard R10 preferred numbers, whole mm. Untagged numbers are bugs. Vague request: infer intent from open documents and existing sketches, state assumptions in one line, continue; ask only if the answer changes the concept.
+2. Look up only what you need: knowledge_search (cheap snippets) -> knowledge_get for one section. knowledge_get("solidworks-api") has verified call recipes; knowledge_get("agent-guide") has the full workflow.
+3. Build one stage per execute_python call with parameters at the top. Injected helpers: val(obj,"Member") for zero-argument members (never obj.Member()), call(obj,"Method",...), arr(list), select(doc,name,type), plane("front"|"top"|"right") (localized names), feats(), feat(name), active(), report(), render(views), store (persists), mm, deg. API units are metres and radians.
+4. Verify every stage: report() / model_report (errors, bodies, box, mass). render_views only at milestones (2x2 grid at 384 px is about 800 tokens; 1 view about 200). Assemblies: check_interference. Spiral bevel, helical and worm pairs need opposite hands.
+5. Fix the first failure only; after 3 failed attempts on one stage change the approach.
+6. Print only counts and key values. Never print whole trees, arrays or point lists.
+7. Quality gate before reporting: no rebuild errors, intended body count, dimensions match the spec, no unintended interference, process rules met. Report briefly: key parameters with basis tags, check numbers, at most 3 next options.

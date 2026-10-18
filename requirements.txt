@@ -1,0 +1,24 @@
+# SolidWorks MCP Server Dependencies
+# Author: Samsaam Ali Baig
+# Updated: 2026-01-22
+
+# MCP SDK
+# Kept below 2.0: mcp 2.x removed the Server.list_tools()/call_tool() decorators server.py uses
+mcp>=1.0.0,<2
+
+# Async support
+# asyncio ships with Python. The old "asyncio-compat>=0.1.0" line was removed:
+# no such package exists on PyPI, so it made `pip install -r requirements.txt` fail.
+
+# Logging and utilities
+python-dotenv>=1.0.0
+
+# ===== NEW: Direct COM Automation =====
+# pywin32 for proper COM automation with error handling
+pywin32>=306
+
+# For COM VARIANT types (ByRef parameters)
+# pythoncom is included with pywin32
+
+# Images for render_views (crop, resize, 2x2 grid)
+Pillow>=10.0
