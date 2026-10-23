@@ -79,6 +79,7 @@ In an assembly: `component.ReferencedConfiguration = "LH"` then `val(asm, "EditR
 ## Checks without changing the model
 ```python
 mp = val(doc.Extension, "CreateMassProperty")          # Volume m3, Mass kg, CenterOfMass
+mass, density = mp.Mass, mp.Density                     # read these first: after Volume/SurfaceArea they come back for 1 kg/m3
 body_copy = val(body, "Copy"); call(body_copy, "ApplyTransform", transform)
 hit = call(val(body, "Copy"), "Operations2", 15901, body_copy, byref_int())   # temporary intersect
 ```

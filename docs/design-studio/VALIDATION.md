@@ -57,9 +57,28 @@ HTML 보고서를 브라우저에서 열어 이미지·표·검토 상태 표시
 원본 파일, proposal, evaluation, 전체 정밀도 수치, SHA-256 manifest를 함께 보존합니다.
 **사용자 검토 기록은 생성하지 않았습니다.**
 
+## Windows 실기 검증 (2026-10-23)
+
+환경: Windows, SOLIDWORKS 2025 (한국어 UI), Python 3.14.7 (기본 인코딩 cp949), MCP Python SDK 1.30.0, SQLite 3.50.4.
+
+- Windows native 서버를 새 프로세스(stdio)로 실행해 initialize / tools/list에서 **51개 도구**와 새 instructions를 확인.
+  `design_calculate`(외팔보 결과가 손계산과 일치), `design_context`(quality), `design_schema`, 한국어 `knowledge_search` 호출 확인.
+- 실제 COM으로 `design_capture` 확인. 임시 파트(60 x 40 x 10 mm, 지름 10 mm 관통 구멍)에서 피처 19개, D1 = 0.010 m,
+  면 7개(평면 6, 원통 r = 5 mm), 면적 합 = 보고 면적, 부피 23,214.6 mm3(해석값과 일치), extraction issue 없음.
+  새 서버 프로세스에서 `design_project` 다음 `design_capture`로 AISI 1020 블록의 질량 0.1896 kg, 밀도 7900 kg/m3를 기록.
+- 이 검증에서 고친 문제:
+  - `model_report` 질량·밀도: `IMassProperty`에서 Volume이나 SurfaceArea를 먼저 읽으면 Mass와 Density가
+    밀도 1 kg/m3 기준으로 나옴(AISI 1020 블록 0.1896 kg이 0.00002 kg으로 보고됨). Mass와 Density를 먼저 읽도록 고침
+    (`verification.mass_properties`). `model_report`, `execute_python`의 `report()`, `design_capture` metrics가 모두 이 값을 씀.
+  - `design_capture`를 SolidWorks 연결 전에 부르면 열린 문서가 있어도 "no active SolidWorks document"로 실패하던 문제:
+    다른 native 도구처럼 먼저 연결함.
+  - 테스트 1개가 UTF-8 HTML 보고서를 기본 인코딩으로 읽어 한글 Windows(cp949)에서 실패: `encoding="utf-8"` 지정.
+- 단위 테스트 62개 OK (Windows 전용 `test_verification` 포함; 설치 테스트 1개는 Windows에서 의도적으로 건너뜀).
+
 ## 아직 검증하지 않은 범위
 
-- 실제 Windows SolidWorks에서 native capture/형상 수정/어셈블리 검증.
+- 사용자 원본 부품·어셈블리의 native capture(어셈블리 components 추출 포함), 형상 수정, 어셈블리 검증.
+  임시 파트 capture는 위의 Windows 실기 검증 참조.
 - 원본 Walker 전체 CAD, 회사 원본 문서와 계산 코드의 재검증.
 - 실제 제품의 구조·진동·피로·열·전장·센서 성능, 제조/조립/정비성, 사용자 외형 승인.
 - 실제 Claude/Codex 모델이 제품 설계 한 건을 끝까지 수행하는 생성 품질 및 토큰/비용 비교.

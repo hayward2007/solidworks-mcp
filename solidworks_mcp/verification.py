@@ -77,6 +77,22 @@ def feature_errors(doc, limit=20, tree=None):
     return found
 
 
+def mass_properties(mp):
+    """Mass block of an IMassProperty (mm3, mm2, kg, kg/m3, mm).
+
+    Mass and Density are read first: once Volume or SurfaceArea has been read, SolidWorks 2025
+    returns them as if the density were 1 kg/m3 (an AISI 1020 part then reports 1/7900 of its mass).
+    """
+    mass, density = mp.Mass, mp.Density
+    return {
+        "volume_mm3": round(mp.Volume * 1e9, 2),
+        "area_mm2": round(mp.SurfaceArea * 1e6, 2),
+        "mass_kg": round(mass, 5),
+        "density_kg_m3": round(density, 1),
+        "center_mm": _mm(mp.CenterOfMass),
+    }
+
+
 def model_report(doc, last=8):
     """Compact summary of the active document for the agent to check after each step."""
     if doc is None:
@@ -148,14 +164,7 @@ def model_report(doc, last=8):
 
     if kind in ("part", "assembly"):
         try:
-            mp = val(doc.Extension, "CreateMassProperty")
-            report["mass"] = {
-                "volume_mm3": round(mp.Volume * 1e9, 2),
-                "area_mm2": round(mp.SurfaceArea * 1e6, 2),
-                "mass_kg": round(mp.Mass, 5),
-                "density_kg_m3": round(mp.Density, 1),
-                "center_mm": _mm(mp.CenterOfMass),
-            }
+            report["mass"] = mass_properties(val(doc.Extension, "CreateMassProperty"))
         except Exception as exc:
             report["mass"] = {"error": str(exc)[:120]}
     return report

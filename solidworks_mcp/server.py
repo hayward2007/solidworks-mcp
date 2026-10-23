@@ -534,7 +534,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         
         # Portable design evidence/review tools share the native server connection.
         if name.startswith("design_"):
-            doc = sw_automation.app.ActiveDoc if name == "design_capture" and sw_automation.is_connected else None
+            doc = None
+            if name == "design_capture":
+                if not sw_automation.is_connected:
+                    sw_automation.connect()  # like the other native tools; otherwise an open document looks absent
+                doc = sw_automation.app.ActiveDoc if sw_automation.is_connected else None
             data = design_dispatch(name, arguments, native_doc=doc)
             result = {"success": True, "message": name, "error_code": 0, "error_name": "swSuccess", "data": data}
 

@@ -283,7 +283,7 @@ class LedgerAndReview(TemporaryStore):
         p = deepcopy(self.packet); p["title"] = '<script>alert("unsafe")</script>'
         rev = self.engine.submit("demo", p, self.r2)["revision"]
         out = export_review(self.store, "demo", rev, self.root / "escaped")
-        document = Path(out["html"]).read_text()
+        document = Path(out["html"]).read_text(encoding="utf-8")
         self.assertNotIn('<script>alert(', document)
         self.assertIn("&lt;script&gt;", document)
         self.assertIn("Content-Security-Policy", document)
