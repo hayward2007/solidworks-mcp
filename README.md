@@ -105,7 +105,7 @@ The server has to run on the user's Windows PC next to SolidWorks; never install
 
 SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 조작하게 해 주는 [Model Context Protocol](https://modelcontextprotocol.io/) 서버예요. 메뉴를 클릭하는 대신 만들고 싶은 형상을 말로 설명하면, Claude가 SolidWorks COM API로 파트를 만들고 스케치를 그리고 피처를 추가해요.
 
-- 도구 51개 (기존 CAD 34 + Design Studio 17): 연결, 문서, 스케치, 피처, 유틸리티, SolidWorks API를 직접 실행하는 `execute_python`, 검증(Text-to-CAD), 설계 지식 검색, 기어 생성, 토폴로지 최적화
+- 도구 52개 (CAD·검증 35 + Design Studio 17): 연결, 문서, 스케치, 피처, 유틸리티, SolidWorks API를 직접 실행하는 `execute_python`, 검증(Text-to-CAD), 설계 지식 검색, 기어 생성, 토폴로지 최적화
 - 에이전트용 작업 규칙(토큰 절약, 설계 근거)이 매 세션 자동 적용돼요
 - SolidWorks 2023–2025 지원, 설치 경로 자동 탐지(레지스트리)
 - 단위: mm, cm, m, inch, ft (기본 mm)
@@ -124,7 +124,7 @@ SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 �
 | Text-to-CAD 검증 도구 | `model_report`, `render_views`, `export_model`, `check_interference`를 추가하고, `execute_python`에 도우미 주입과 `report` 옵션을 넣었어요. |
 | 설계 지식 베이스 | `knowledge/` 노트 12개와 `knowledge_search`, `knowledge_get` 도구. |
 | 기어 생성기 | `gear_design`, `create_gear`: 스퍼·헬리컬·헤링본·내접·랙·직선/스파이럴 베벨·웜·웜휠을 규격 공식으로 만들고 부피와 물림 간섭으로 스스로 검증해요. |
-| 토폴로지 최적화 | `topology_optimize`: ToPy를 Python 3로 옮긴 2D/3D 강성·메커니즘 최적화, 결과를 SolidWorks 파트로 만들어요. |
+| 토폴로지 최적화 | `topology_optimize`: ToPy를 Python 3로 옮긴 2D/3D 강성·메커니즘 최적화에 열전도(+대류 경계)와 복합 모드를 더했어요. 하중·열은 최대값으로 받고 2배(안전계수 2 이상)로 설계하며, 볼트·탭·핀·패드 체결부는 규격 구멍과 보존 링을 만들고 체결부별로 검토해요. 결과를 SolidWorks 파트로 만들어요. |
 | 에이전트 가이드 | 작업 흐름, 토큰 절약, 근거 규칙을 서버 instructions로 매 세션 자동 적용해요. |
 | 설계 스킬 | `skills/solidworks-design`: Cowork처럼 서버 instructions를 넘기지 않는 클라이언트에서도 같은 작업 규칙을 불러오는 Claude 스킬이에요. 도구 설명에도 `knowledge_get("agent-guide")` 안내를 넣었어요. |
 | 출력 토큰 절감 | `execute_python` 결과 중복 제거, JSON 압축 출력(한글을 `\u` 이스케이프 없이), 트레이스백을 스크립트 부분만 남겨요. |
@@ -280,7 +280,7 @@ Claude는 보통 `create_sketch` → `draw_*` → `close_sketch` → `extrude_sk
 | 지식 | `knowledge_get` | 섹션 하나, 주제 전체, 또는 `index` | `id` |
 | 기어 | `gear_design` | 기어 치수, 전위, 중심거리, 물림률, 간섭 경고 계산 (CAD 없이) | `kind`, `module`, `teeth` |
 | 기어 | `create_gear` | 기어를 네이티브 피처로 만들고 자가 검증 (짝 기어와 물림 검사 선택) | `type`, `module`, `teeth`, `build_mate` |
-| 최적화 | `topology_optimize` | 2D/3D 토폴로지 최적화 시작·확인, 결과로 파트 생성 | `problem` 또는 `tpd`, `job`, `build` |
+| 최적화 | `topology_optimize` | 2D/3D 위상 최적화(강성, 열전도+대류, 복합) 시작·확인, 최대 하중·열의 2배 설계와 체결부 검토, 결과로 파트 생성 | `problem` 또는 `tpd`, `job`, `build` |
 
 `fillet_edges`와 `chamfer_edges`는 모서리가 먼저 선택돼 있어야 해요. SolidWorks에서 직접 고르거나 `execute_python`으로 선택하세요.
 
@@ -326,7 +326,7 @@ result = report()                        # 오류, 바디, 경계 상자, 질량
 | 재료 | `materials.md` | 금속·플라스틱·3D 프린팅 재료 물성 |
 | DFM | `dfm.md` | 가공, 판금, 사출, FDM·SLA·SLS 규칙 |
 | 기어 생성기 | `gear-generators.md` | create_gear 종류, 좌표계, 기본값 근거, 자가 검증, 어셈블리 배치 |
-| 토폴로지 최적화 | `topology-optimization.md` | 문제 정의(mm), 기본값 근거, 결과 해석, 파트로 만들기 |
+| 토폴로지 최적화 | `topology-optimization.md` | 문제 정의(mm), 열·복합 모드, 체결부·중요 형상 안전계수 2, 자동 부피율, 결과 해석, 파트로 만들기, 가공 모드 계획 |
 | API 레시피 | `solidworks-api.md` | 검증된 SolidWorks API 호출 (스케치, 로프트, 스윕, 패턴, 구성, 메이트, 검사, STL 불러오기) |
 | 어셈블리 가이드 | `assembly-guide.md` | 조립 절차 A0–A8, 메이트·기준·자세 규칙, 기구 검증(솔버/기하 자세), 파킹, 창 닫기, 함정 표 |
 | 설계 워크플로 | `design-workflow.md` | 설계→모델링→검증→이슈 분류 플라이휠, 검증 배터리 V1–V6, 시간 제한, 루프 보고 형식 |
@@ -354,7 +354,13 @@ result = report()                        # 오류, 바디, 경계 상자, 질량
 
 ### 토폴로지 최적화
 
-`topology_optimize`는 [ToPy](https://github.com/williamhunter/topy)(MIT)를 Python 3 + scipy로 옮긴 SIMP 최적화예요. 최소 컴플라이언스(강성 최대)와 컴플라이언트 메커니즘을 2D 판재와 3D로 풀어요. 열전도와 CFD는 넣지 않았어요.
+`topology_optimize`는 [ToPy](https://github.com/williamhunter/topy)(MIT)를 Python 3 + scipy로 옮긴 SIMP 최적화예요. 최소 컴플라이언스(강성 최대), 컴플라이언트 메커니즘, 정상 열전도(대류는 막 계수로), 강성+열 복합을 2D 판재와 3D로 풀어요. 유동 CFD는 넣지 않았어요.
+
+- **안전계수 2 규칙**: 하중(`loads`, 체결부 `force`)과 열(`power_W`, `heat_W`)은 최대 사용값으로 넣고, 해석·미리보기·모든 검토는 그 2배(`safety_factor`, 2 미만은 오류)로 해요.
+- **체결부(`interfaces`)**: 볼트(ISO 273 통과 구멍), 탭(ISO 2306 탭 드릴), 핀, 패드. 구멍은 비우고 반지름 max(1.5 d, 와셔 자리 + 요소 1개)의 링은 보존해요. 구멍 벽 절점이 지지·하중·열원·방열(기준 온도) 역할을 해요. 결과에 체결부별 볼트 전단·인장, 지압, 끝단 찢김, 탭 체결 길이(볼트 항복 전 나사산 파손 방지) 이용률이 나와요.
+- **중요 형상(`critical`)**: 베어링 자리, 실링 면 등은 항상 남겨요.
+- **검토**: 설계 하중에서 응력 스크리닝(밀도 0.5 이상, 체결부 제외)이 항복 이하, 설계 열에서 최고 온도가 `max_temperature_C` 이하인지 봐요. 최종 CAD는 SOLIDWORKS Simulation으로 설계 하중에서 다시 확인해요.
+- **`volume_fraction: "auto"`**: 응력·온도 검토를 통과하는 가장 가벼운 부피율을 이분 탐색해요.
 
 - 검증: 요소 강성 행렬이 ToPy의 SymPy 정의와 기계 정밀도로 같고, MBB 보 계산이 Sigmund 99줄 코드와 같은 값을 내요(첫 반복 1e-11, 8회 반복 1e-9).
 - 문제는 mm로 정의해요: `size`, `element_size`, `thickness`, `volume_fraction`, `supports`, `loads`, `keep_out`/`keep_in`(볼트 구멍 주변은 보존, 움직이는 부품 자리는 제외), `material`. ToPy `.tpd` 파일도 그대로 받아요.
@@ -416,9 +422,12 @@ SolidWorks 지원을 가장 먼저 해요. 진행 순서:
 - [ ] **부품 DB**: KS/ISO 표준 부품 치수 표와, 사용자가 확인한 한국 미스미 품번 등록·검색 (미스미 사이트는 robots.txt와 약관이 자동 수집을 막아서 크롤링하지 않아요)
 - [x] **기어 생성기**: 스퍼, 헬리컬, 헤링본, 내접, 랙, 직선·스파이럴 베벨, 웜·웜휠 (규격 공식, 부피·물림 자가 검증)
 - [x] **토폴로지 최적화**: 2D/3D 강성·컴플라이언트 메커니즘 (ToPy 포팅), 2D 결과는 돌출 파트로
+- [x] **열·복합 위상 최적화**: 열전도 + 대류 경계, 최대 하중·열의 2배 설계, 체결부 자동 처리와 검토, 자동 부피율
+- [x] **표준 검증과 워크플로**: `verify_model`(V1 파트, V2 어셈블리), 어셈블리 가이드, 설계-모델링-검증 플라이휠
+- [ ] **가공 최적화 모드**: 2.5D 밀링·공구 반경·벽/바닥 두께 제약 (조사 완료, `topology-optimization.md`의 계획 참고)
 - [ ] **유성기어 어셈블리 자동 배치**와 3D 최적화 결과의 리모델링 보조
 
-열해석과 CFD는 이번 범위에서 뺐어요(SOLIDWORKS Flow Simulation 결과 신뢰성 문제로 보류).
+열전도(대류는 막 계수)는 자체 FE로 넣었어요. 유동 CFD(SOLIDWORKS Flow Simulation 연동)는 결과 신뢰성 문제로 계속 보류해요.
 
 ### 프로젝트 구조
 
@@ -438,7 +447,7 @@ Solidworks-MCP/
 │   ├── knowledge.py           # 지식 베이스 검색
 │   ├── com.py                 # late binding COM 도우미 (val, call, arr, plane ...)
 │   ├── gears/                 # 기어: geometry(인볼류트), bevel, build(SolidWorks), api(도구 인자)
-│   ├── topopt/                # 토폴로지 최적화 (ToPy 포팅): problem, topology, export, run, cad
+│   ├── topopt/                # 토폴로지 최적화 (ToPy 포팅 + 열): problem, topology, physics(열·응력·체결부), export, run, cad
 │   ├── tests/                 # 기어·최적화·설치 단위 테스트 (python -m unittest solidworks_mcp.tests.test_gears ...)
 │   ├── config.py, config.json # 설정
 │   ├── constants.py           # SolidWorks 상수
@@ -504,7 +513,7 @@ SolidWorks MCP Server is a [Model Context Protocol](https://modelcontextprotocol
 | Text-to-CAD verification | Added `model_report`, `render_views`, `export_model`, `check_interference`; `execute_python` gets injected helpers and a `report` option. |
 | Design knowledge base | 12 notes in `knowledge/` with `knowledge_search` and `knowledge_get`. |
 | Gear generators | `gear_design`, `create_gear`: spur, helical, herringbone, internal, rack, straight/spiral bevel, worm and worm wheel from the standards' formulas, self-checked by volume and mesh interference. |
-| Topology optimization | `topology_optimize`: ToPy ported to Python 3 for 2D/3D stiffness and compliant-mechanism problems, results turned into SolidWorks parts. |
+| Topology optimization | `topology_optimize`: ToPy ported to Python 3 for 2D/3D stiffness and compliant-mechanism problems, plus heat conduction with convection films and a combined mode. Loads and heat are maximum values designed at 2 x (safety factor at least 2); bolt, tapped-hole, pin and pad joints get standard holes, keep-in rings and per-joint checks. Results are turned into SolidWorks parts. |
 | Agent guide | Workflow, token rules and rationale policy are sent as MCP server instructions in every session. |
 | Design skill | `skills/solidworks-design`: a Claude skill that brings the same working rules to clients that do not pass server instructions on, such as Cowork. The tool descriptions also point to `knowledge_get("agent-guide")`. |
 | Fewer output tokens | No duplicated `execute_python` output, compact JSON without `\u` escapes, tracebacks trimmed to the script frames. |
@@ -660,7 +669,7 @@ Every tool that takes lengths also accepts an optional `unit` (mm, cm, m, inch, 
 | Knowledge | `knowledge_get` | One section, a whole topic, or `index` | `id` |
 | Gears | `gear_design` | Gear dimensions, profile shifts, centre distance, contact ratio, interference warnings (no CAD) | `kind`, `module`, `teeth` |
 | Gears | `create_gear` | Build a gear as native features and check it (optionally with its mate and a mesh check) | `type`, `module`, `teeth`, `build_mate` |
-| Optimization | `topology_optimize` | Start / poll a 2D or 3D topology optimization, build the part from the result | `problem` or `tpd`, `job`, `build` |
+| Optimization | `topology_optimize` | Start / poll a 2D or 3D topology optimization (stiffness, heat conduction with convection, combined) designed at 2 x maximum force and heat with joint checks, build the part from the result | `problem` or `tpd`, `job`, `build` |
 
 `fillet_edges` and `chamfer_edges` work on edges that are already selected; select them in SolidWorks or with `execute_python`.
 
@@ -706,7 +715,7 @@ The agent searches the Markdown notes in `knowledge/`. Notes are written in Engl
 | Materials | `materials.md` | metals, plastics and 3D printing materials |
 | DFM | `dfm.md` | machining, sheet metal, injection moulding, FDM/SLA/SLS rules |
 | Gear generators | `gear-generators.md` | create_gear types, frames, defaults and their basis, self-checks, assembly placement |
-| Topology optimization | `topology-optimization.md` | problem spec in mm, defaults and basis, reading results, turning them into parts |
+| Topology optimization | `topology-optimization.md` | problem spec in mm, thermal and combined modes, safety factor 2 on joints and critical features, automatic volume fraction, reading results, turning them into parts, machining-mode plan |
 | API recipes | `solidworks-api.md` | verified SolidWorks API calls (sketches, lofts, sweeps, patterns, configurations, mates, checks, STL import) |
 | Assembly guide | `assembly-guide.md` | assembly procedure A0-A8, mate/datum/pose rules, motion checks (solver or geometric poses), parking, closing windows, pitfall table |
 | Design workflow | `design-workflow.md` | design-model-verify-triage flywheel, verification batteries V1-V6, time boxes, loop report format |
@@ -734,7 +743,13 @@ Example: "module 1.5, 18:36 spur pair, 8 mm bore with keyway" -> `create_gear {"
 
 ### Topology optimization
 
-`topology_optimize` is a SIMP optimizer ported from [ToPy](https://github.com/williamhunter/topy) (MIT) to Python 3 + scipy: minimum compliance (maximum stiffness) and compliant mechanisms, 2D plates and 3D. Heat conduction and CFD are not included.
+`topology_optimize` is a SIMP optimizer ported from [ToPy](https://github.com/williamhunter/topy) (MIT) to Python 3 + scipy: minimum compliance (maximum stiffness), compliant mechanisms, steady heat conduction (convection as film coefficients) and stiffness plus heat together, 2D plates and 3D. Fluid CFD is not included.
+
+- **Safety factor 2**: loads (`loads`, joint `force`) and heat (`power_W`, `heat_W`) are maximum service values; analysis, preview and every check use 2 x (`safety_factor`, below 2 is an error).
+- **Joints (`interfaces`)**: bolt (ISO 273 clearance), tapped hole (ISO 2306 tap drill), pin and pad. The hole is void, a ring of radius max(1.5 d, washer seat + one element) stays solid, and the hole-wall nodes act as support, load, heat source or sink. Results list per-joint utilisation: bolt shear and tension, bearing, tear-out, tapped-hole engagement (thread must not strip before the bolt yields).
+- **Critical features (`critical`)** such as bearing seats and sealing faces always stay solid.
+- **Checks**: stress screening (density >= 0.5, joints excluded) at the design load against yield, and peak temperature at the design heat against `max_temperature_C`. Verify the final CAD in SOLIDWORKS Simulation at the design loads.
+- **`volume_fraction: "auto"`** bisects for the lightest volume fraction that passes the stress and temperature checks.
 
 - Verification: the element matrices equal ToPy's SymPy definitions to machine precision, and the MBB beam reproduces Sigmund's 99-line code (first iteration to 1e-11, eight iterations to 1e-9).
 - Problems are given in mm: `size`, `element_size`, `thickness`, `volume_fraction`, `supports`, `loads`, `keep_out` / `keep_in` (keep material around bolt holes, clear space for moving parts), `material`. ToPy `.tpd` files are accepted as they are.
@@ -796,9 +811,12 @@ SolidWorks support comes first. Order of work:
 - [ ] **Parts database**: KS/ISO standard part tables plus MISUMI Korea part numbers registered by the user (the MISUMI site's robots.txt and terms forbid automated collection, so it is not crawled)
 - [x] **Gear generators**: spur, helical, herringbone, internal, rack, straight and spiral bevel, worm and worm wheel (standard formulas, self-checked volume and mesh)
 - [x] **Topology optimization**: 2D/3D stiffness and compliant mechanisms (ToPy port), 2D results as extruded parts
+- [x] **Thermal and combined topology optimization**: heat conduction with convection films, design at 2 x maximum force and heat, automatic joint handling and checks, automatic volume fraction
+- [x] **Standard verification and workflow**: `verify_model` (V1 part, V2 assembly), assembly guide, design-model-verify flywheel
+- [ ] **Machining optimization mode**: 2.5D milling, tool radius, wall and floor thickness constraints (survey done; plan in `topology-optimization.md`)
 - [ ] **Planetary assembly placement** and help with remodelling 3D optimization results
 
-Thermal and CFD studies are out of scope for now (SOLIDWORKS Flow Simulation results were not trusted enough).
+Heat conduction (convection as film coefficients) is now built in with its own FE. Fluid CFD (SOLIDWORKS Flow Simulation) stays out of scope because its results were not trusted enough.
 
 ### Project structure
 
@@ -818,7 +836,7 @@ Solidworks-MCP/
 │   ├── knowledge.py           # knowledge base search
 │   ├── com.py                 # late-binding COM helpers (val, call, arr, plane, ...)
 │   ├── gears/                 # gears: geometry (involute), bevel, build (SolidWorks), api (tool arguments)
-│   ├── topopt/                # topology optimization (ToPy port): problem, topology, export, run, cad
+│   ├── topopt/                # topology optimization (ToPy port + heat): problem, topology, physics (heat, stress, joints), export, run, cad
 │   ├── tests/                 # gear, optimizer and installer unit tests (python -m unittest solidworks_mcp.tests.test_gears ...)
 │   ├── config.py, config.json # configuration
 │   ├── constants.py           # SolidWorks constants

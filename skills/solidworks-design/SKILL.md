@@ -29,7 +29,7 @@ For vague requests, read the open documents and existing geometry first, state a
 
 ## 3. Use the dedicated tools first
 - Gears: `gear_design` (numbers and warnings, no CAD), then `create_gear`. Use `build_mate: true` for pairs and check `volume_error_pct` (|e| < 0.1 %), `bodies` = 1 and `mesh_check.max_interference_mm3` (about 0 with backlash). External helical and spiral bevel pairs need opposite hands; internal helical and worm/wheel pairs the same hand.
-- Lightweight parts: `topology_optimize` with the problem in mm (supports, loads, keep_in around bolt holes, keep_out for moving parts, material). Poll with `job`, then `build: true` and add the interface features.
+- Lightweight or heat-spreading parts: `topology_optimize` with the problem in mm. Enter maximum loads and heat; the tool designs for 2 x (`safety_factor` at least 2). Declare joints as `interfaces` (bolt, tapped, pin, pad: standard holes, keep-in rings, supports, loads, heat, sinks), critical features as `critical`, heat as `thermal` (sources, sinks, convection films, `max_temperature_C`) and material {E, nu, yield, density, k}. Read `safety` (stress, temperature, per-joint utilisation) before building; a failing joint is a SPEC issue for the next loop. Poll with `job`, then `build: true` and add the interface features (`knowledge_get("topology-optimization")`).
 - Everything else: `execute_python`, one modeling stage per call, parameters at the top, injected helpers (`val`, `call`, `arr`, `select`, `plane`, `feats`, `report`, `render`, `store`, `mm`, `deg`). API units are metres and radians.
 
 ## 4. Verify every stage

@@ -1,13 +1,14 @@
 ---
 title: Topology optimization (topology_optimize)
-tags: topology optimization, topology, 토폴로지, 위상, 최적화, optimisation, lightweight, 경량, 경량화, stiffness, 강성, compliance, simp, topy, mechanism, 메커니즘, compliant, 컴플라이언트, bracket, 브라켓, volume fraction, 부피율, keep out, 금지영역, keep in, filter, 필터
-summary: Setting up 2D/3D minimum-compliance and compliant-mechanism problems in mm, defaults with their basis, reading the results and turning them into SolidWorks parts.
+tags: thermal, 열, 열전도, 대류, convection, heat, 방열, safety factor, 안전율, 안전계수, joint, 체결부, bolt, 볼트, tapped hole, 탭, interface, 접합, machining, 가공, milling, topology optimization, topology, 토폴로지, 위상, 최적화, optimisation, lightweight, 경량, 경량화, stiffness, 강성, compliance, simp, topy, mechanism, 메커니즘, compliant, 컴플라이언트, bracket, 브라켓, volume fraction, 부피율, keep out, 금지영역, keep in, filter, 필터
+summary: Setting up 2D/3D stiffness, heat-conduction (with convection) and combined problems in mm with the 2 x safety factor on joints, defaults with their basis, reading the results and turning them into SolidWorks parts; machining mode plan.
 ---
 
 # Topology optimization
 
 ## What it does
-- SIMP density method (Python 3 / scipy port of ToPy, verified against Sigmund's 99-line code): minimum compliance (maximum stiffness for a volume budget) or compliant mechanisms, 2D plane-stress plates or 3D solids. Thermal and CFD problems are not included.
+- SIMP density method (Python 3 / scipy port of ToPy, verified against Sigmund's 99-line code): minimum compliance (maximum stiffness for a volume budget), compliant mechanisms, steady heat conduction with convection films, or stiffness and heat together; 2D plane-stress plates or 3D solids. Fluid flow (CFD) is not modelled: convection enters as a film coefficient.
+- Every spec run uses design values = `safety_factor` (default and minimum 2) x the maximum force and heat, sizes joint holes and keep-in rings, and ends with stress, temperature and per-joint checks (sections below).
 - Runs as a background job; `topology_optimize` waits up to `wait` s (default 25, max 30), then poll with `job`. `build: true` creates the part: 2D -> splines through the 0.5-density contour, extruded by the thickness (volume checked); 3D -> STL imported as a mesh solid body (reference geometry to remodel with features).
 
 ## Problem spec (mm, origin at the lower-left(-back) corner, y up)
@@ -45,8 +46,37 @@ summary: Setting up 2D/3D minimum-compliance and compliant-mechanism problems in
 - `cad` (2D): loops, holes, area and plate volume; the extruded part's `volume_error_pct` should be within about 0.1 %.
 - Check the preview: supports blue, loads red, mechanism output green. Members thinner than 2 elements are not manufacturable at that element size.
 
+## Safety factor 2 on joints and critical features
+- Rule [req, user]: joints with other parts (bolts, tapped holes, pins, contact and thermal pads) and critical features are designed for 2 x the maximum force and 2 x the maximum heat. Enter maximum service loads and heat; the solver, the preview arrows and every check use the design values. `safety_factor` may be higher, never below 2 (error).
+- `interfaces` turn each joint into geometry and boundary conditions: hole (ISO 273 medium clearance for `bolt`, ISO 2306 tap drill for `tapped`, the pin diameter for `pin`) as keep-out, a keep-in ring of radius max(1.5 d, washer seat (ISO 7089) + one element), and the nodes of the hole wall as a support (`role: support`), a design load (`role: load`, `force`), a heat source (`heat_W`) or a sink at the reference temperature (`sink: true`). A `pad` (box, circle, cylinder) is kept solid and carries the same roles.
+- `critical` shapes (bearing seats, sealing faces, datum bosses) stay solid; give a `reason`.
+- Joint checks at the design force (supports use the computed reaction): bolt or pin shear (ISO 898-1 Rp0.2/sqrt 3, stress area), bolt tension when `axial`, part bearing <= yield, tear-out edge distance against the ring radius, and for tapped holes the engagement needed so the thread does not strip before the bolt yields (0.75 pi d L, at least 1 d). A failing joint is a SPEC issue for the next loop: larger size, more bolts, thicker plate or a stronger material; the optimiser does not move joints.
+- Field checks: von Mises screening (elements with density >= 0.5, qp-relaxed, joints excluded) <= yield at the design load, i.e. at least 2 x margin at the maximum load (`sf_at_max_load`), and peak temperature at the design heat <= `max_temperature_C`. Screening is not FEA of the final CAD: verify the built part in SOLIDWORKS Simulation at the design loads.
+- `volume_fraction: "auto"` bisects (`auto_range`, `auto_steps`) for the lightest design whose field checks pass. Keep-in regions above the volume fraction are rejected: there is nothing left to optimise.
+
+## Thermal and stiffness+thermal mode
+```json
+{"size": [80, 50], "element_size": 1, "thickness": 4, "volume_fraction": "auto",
+ "material": {"E": 69000, "nu": 0.33, "yield": 240, "density": 2.7, "k": 167},
+ "interfaces": [{"type": "bolt", "size": 5, "at": [8, 10], "role": "support", "sink": true},
+                {"type": "bolt", "size": 5, "at": [8, 40], "role": "support", "sink": true},
+                {"type": "tapped", "size": 4, "at": [72, 25], "role": "load", "force": [0, -300]},
+                {"type": "pad", "box": [40, 20, 52, 30], "role": "thermal", "heat_W": 4}],
+ "thermal": {"reference_C": 40, "max_temperature_C": 85, "plate_faces": {"h_W_m2K": 8, "sides": 2}}}
+```
+- Temperatures are solved as theta = T - `reference_C`: sinks sit at the reference, films exchange heat with it. One reference per problem; take the hottest of ambient and mounting temperature when they differ.
+- Films: `convection` on domain edges (2D, through the thickness) or faces (3D), fixed; `plate_faces` (2D) puts the film on both plate faces wherever material exists (density-weighted). Interior film in 3D (design-dependent surfaces) is not modelled.
+- Objective: w_s C_s / C_s0 + w_t C_t / C_t0, each compliance normalised by its first-iteration value (`objective` weights, default 1:1). Both terms are self-adjoint.
+- Checked against closed forms (2026-10-23): conduction bar within 0.2 % (equal nodal split at the corners), plate-face film energy balance and edge film exact, uniaxial stress exact; a 64 x 40 x 8 mm 3D aluminium bracket with 6 W design heat rose 9.4 K, the order of a hand estimate (10-15 K).
+
+## Machining mode (planned, not implemented)
+Goal: results that a CNC machine can cut. Plan from the 2026-10-23 code survey (leads, not independently verified):
+- No usable open-source implementation exists; re-implement. Per tool direction a smooth cumulative filter along the tool axis followed by a Heaviside projection gives 2.5D milling (Langelaar 2019, CMAME 351:226); several setups combine by a smooth intersection. Minimum tool radius = void length scale (filter + eroded/dilated robust projection), wall = solid length scale, floor = passive layer, extrusion = project to 2D and re-extrude (Vatanabe et al. 2016, AES 100:97). Casting direction: Gersborg and Andreasen 2011, SMO 44:875.
+- Code templates: pyMOTO (MIT, aatmdelissen/pyMOTO) overhang filter; BESO (LGPL, calculix/beso) casting filter and topoptlab (GPL) as reference only. Verify accessibility of the final voxels by ray casting before CAD export; pocket and rib parameter studies later on the same FE core.
+- The safety-factor rule and the joint handling above apply unchanged.
+
 ## Turning it into a part
-1. Optimise on a design space that already excludes interfaces (keep_out) and protects them (keep_in).
+1. Optimise on a design space that already excludes interfaces (keep_out) and protects them (keep_in); declare joints as `interfaces` so holes, rings and checks follow the 2 x rule.
 2. Build the plate (`build: true`), then add the real interface features: bolt holes, bearing bores, chamfers/fillets (dfm), and check wall thickness against the process.
 3. For 3D results remodel the load paths with ribs, pockets and fillets around the imported mesh body, then delete or hide the mesh.
-4. Verify the final part: mass, and if needed a FEA in SOLIDWORKS Simulation with real loads.
+4. Verify the final part: mass, and FEA in SOLIDWORKS Simulation at the design loads and heat (2 x maximum); the optimiser's checks are screening only.

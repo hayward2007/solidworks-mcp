@@ -5,7 +5,13 @@ LICENSE_TOPY.md): same problem dictionary, node and DOF numbering, Sigmund sensi
 filter, optimality-criteria update with reciprocal / exponential (ETA) and diagonal
 quadratic (APPROX = dquad) approximations, grey-scale-filter continuation (P_/Q_ HOLD,
 INCR, CON, MAX), passive/active elements and mechanism springs. pysparse is replaced by
-vectorised scipy.sparse assembly; the heat-conduction problem type is not included.
+vectorised scipy.sparse assembly.
+
+Thermal extension (not in ToPy): steady conduction with a fixed boundary film and an optional
+density-weighted plate-face film (problem.py / physics.py). PROB_TYPE "heat" minimises the thermal
+compliance q.theta; "comp" with a THERMAL block minimises w_s C_s/C_s0 + w_t C_t/C_t0, both
+compliances normalised by their values at the first iteration (uniform design). Both terms are
+self-adjoint, so the optimality-criteria update is unchanged.
 """
 from __future__ import annotations
 
@@ -46,8 +52,13 @@ class Topology:
     def __init__(self, prob: Dict):
         self.d = prob
         self.probtype = prob["PROB_TYPE"]
-        if self.probtype not in ("comp", "mech"):
-            raise ValueError("PROB_TYPE must be 'comp' or 'mech' (heat is not included)")
+        if self.probtype not in ("comp", "mech", "heat"):
+            raise ValueError("PROB_TYPE must be 'comp', 'mech' or 'heat'")
+        self.thermal = prob.get("THERMAL")
+        if self.probtype == "heat" and not self.thermal:
+            raise ValueError("heat problems need a THERMAL block (geometric spec with 'thermal')")
+        if self.probtype == "mech" and self.thermal:
+            raise ValueError("compliant mechanisms are structural only")
         self.probname = prob.get("PROB_NAME", "")
         self.volfrac = float(prob["VOL_FRAC"])
         self.filtrad = float(prob["FILT_RAD"])
@@ -75,6 +86,7 @@ class Topology:
         n_e = self.edof.shape[1]
         self._iK = np.repeat(self.edof, n_e, axis=1).ravel()
         self._jK = np.tile(self.edof, (1, n_e)).ravel()
+        self.has_struct = self.probtype != "heat"
         self.fixdof = np.unique(np.asarray(prob["FIX_DOF"], dtype=int))
         self.freedof = np.setdiff1d(np.arange(self.ndof), self.fixdof)
         self.r = np.zeros(self.ndof)
@@ -120,6 +132,26 @@ class Topology:
         self.objfval = 0.0
         self.svtfrac = None
         self.history = []
+        self.weights = tuple(prob.get("OBJ_WEIGHTS", (1.0, 0.0) if self.has_struct else (0.0, 1.0)))
+        self.c0 = [None, None]
+        self.parts = {}
+        if self.thermal:
+            self._init_thermal()
+
+    def _init_thermal(self):
+        th = self.thermal
+        nn = int(th["NNODES"])
+        self.tnodes = self.edof[:, ::self.dofpn] // self.dofpn
+        m = self.tnodes.shape[1]
+        self._iT = np.repeat(self.tnodes, m, axis=1).ravel()
+        self._jT = np.tile(self.tnodes, (1, m)).ravel()
+        self.KTe = np.asarray(th["KE"], float)
+        self.KPe = None if th.get("PLATE") is None else np.asarray(th["PLATE"], float)
+        self.KTconv = th.get("KCONV")
+        self.qT = np.asarray(th["Q"], float)
+        self.tfix = np.asarray(th["FIX"], int)
+        self.tfree = np.setdiff1d(np.arange(nn), self.tfix)
+        self.theta = np.zeros(nn)
 
     def _flat(self, elems):
         e = np.asarray(elems, dtype=int).ravel()
@@ -184,20 +216,52 @@ class Topology:
             x = spla.splu(Kf.tocsc(), permc_spec="MMD_AT_PLUS_A").solve(bf)
         return x
 
+    def stiffness(self):
+        w = self.desvars.ravel() ** self.p
+        return sp.coo_matrix(((w[:, None] * self.Ke.ravel()[None, :]).ravel(), (self._iK, self._jK)),
+                             shape=(self.ndof, self.ndof)).tocsc() + self.springs
+
+    def conductance(self):
+        x = self.desvars.ravel()
+        vals = (x[:, None] ** self.p * self.KTe.ravel()[None, :])
+        if self.KPe is not None:                                   # plate-face film where material exists
+            vals = vals + x[:, None] * self.KPe.ravel()[None, :]
+        n = len(self.qT)
+        K = sp.coo_matrix((vals.ravel(), (self._iT, self._jT)), shape=(n, n)).tocsc()
+        return K + self.KTconv if self.KTconv is not None else K
+
+    def _solve_thermal(self, K):
+        Kf = K[self.tfree][:, self.tfree]
+        if not self.nelz:
+            return spla.spsolve(Kf.tocsc(), self.qT[self.tfree])
+        Kf = Kf.tocsr()
+        dinv = 1.0 / Kf.diagonal()
+        M = spla.LinearOperator(Kf.shape, lambda v: dinv * v)
+        try:
+            x, info = spla.cg(Kf, self.qT[self.tfree], x0=self.theta[self.tfree], rtol=1e-9, maxiter=20000, M=M)
+        except TypeError:                                           # scipy < 1.12
+            x, info = spla.cg(Kf, self.qT[self.tfree], x0=self.theta[self.tfree], tol=1e-9, maxiter=20000, M=M)
+        if info != 0:
+            x = spla.splu(Kf.tocsc(), permc_spec="MMD_AT_PLUS_A").solve(self.qT[self.tfree])
+        return x
+
     def fea(self):
         if self.itercount >= MAX_ITERS:
             raise RuntimeError("maximum internal number of iterations exceeded")
-        w = self.desvars.ravel() ** self.p
-        K = sp.coo_matrix(((w[:, None] * self.Ke.ravel()[None, :]).ravel(), (self._iK, self._jK)),
-                          shape=(self.ndof, self.ndof)).tocsc() + self.springs
-        self.u[self.freedof] = self._solve(K, self.r, self.u)
-        if self.probtype == "mech":
-            self.uout[self.freedof] = self._solve(K, self.rout, self.uout)
+        if self.has_struct:
+            K = self.stiffness()
+            self.u[self.freedof] = self._solve(K, self.r, self.u)
+            if self.probtype == "mech":
+                self.uout[self.freedof] = self._solve(K, self.rout, self.uout)
+        if self.thermal:
+            self.theta[self.tfree] = self._solve_thermal(self.conductance())
         self.itercount += 1
 
     def sens_analysis(self):
         ue = self.u[self.edof]
-        if self.probtype == "comp":
+        if self.thermal:
+            self._sens_multi(ue)
+        elif self.probtype == "comp":
             ce = np.einsum("ij,jk,ik->i", ue, self.Ke, ue).reshape(self.shape)
             self.objfval = float((self.desvars ** self.p * ce).sum())
             self.df = -self.p * self.desvars ** (self.p - 1) * ce
@@ -206,6 +270,32 @@ class Topology:
             op = np.einsum("ij,jk,ik->i", ue, self.Ke, uo).reshape(self.shape)
             self.objfval = float(self.u[self.loaddofout].sum())
             self.df = self.p * self.desvars ** (self.p - 1) * op
+
+    def _sens_multi(self, ue):
+        """Weighted, normalised structural and thermal compliance (both self-adjoint)."""
+        x = self.desvars
+        ws, wt = self.weights
+        objective, df = 0.0, np.zeros(self.shape)
+        if self.has_struct and ws > 0:
+            ce = np.einsum("ij,jk,ik->i", ue, self.Ke, ue).reshape(self.shape)
+            cs = float((x ** self.p * ce).sum())
+            if self.c0[0] is None:
+                self.c0[0] = cs
+            objective += ws * cs / self.c0[0]
+            df += -ws * self.p * x ** (self.p - 1) * ce / self.c0[0]
+            self.parts["structural"] = cs
+        te = self.theta[self.tnodes]
+        ke = np.einsum("ij,jk,ik->i", te, self.KTe, te).reshape(self.shape)
+        dct = -self.p * x ** (self.p - 1) * ke
+        if self.KPe is not None:
+            dct = dct - np.einsum("ij,jk,ik->i", te, self.KPe, te).reshape(self.shape)
+        ct = float(self.qT @ self.theta)
+        if self.c0[1] is None:
+            self.c0[1] = ct
+        objective += wt * ct / self.c0[1]
+        df += wt * dct / self.c0[1]
+        self.parts["thermal"] = ct
+        self.objfval, self.df = objective, df
 
     def filter_sens_sigmund(self):
         x = self.desvars.ravel()
@@ -267,6 +357,8 @@ class Topology:
         rec = {"iter": self.itercount, "objective": self.objfval, "volume": float(self.desvars.mean()),
                "change": self.change, "p": self.p, "q": self.q, "eta": float(self.eta.mean()),
                "svtfrac": self.svtfrac, "time_s": round(time.time() - t0, 3)}
+        if self.parts:
+            rec.update({"compliance_" + k: v for k, v in self.parts.items()})
         self.history.append(rec)
         return rec
 

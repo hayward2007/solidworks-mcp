@@ -106,10 +106,16 @@ _GEAR_SCHEMA_CREATE = {"type": "object", "required": ["type", "module"], "proper
 })}
 _TOPOLOGY_SCHEMA = {"type": "object", "required": [], "properties": {
     "problem": {"type": "object", "description": (
-        "size [Lx, Ly(, Lz)] mm; element_size or elements; thickness (2D); volume_fraction (default 0.5); "
-        "supports [{edge|face|at|box, fix: 'xy'}]; loads [{at|box|edge, force: [Fx, Fy(, Fz)] N}]; "
-        "keep_out / keep_in [{box|circle|sphere|cylinder}]; type stiffness|mechanism (+ output {at, direction}); "
-        "material {E, nu, density}; iterations, filter_radius, penalty")},
+        "size [Lx, Ly(, Lz)] mm; element_size or elements; thickness (2D); volume_fraction (default 0.5) or 'auto' "
+        "(lightest design whose stress and temperature checks pass); supports [{edge|face|at|box, fix: 'xy'}]; "
+        "loads [{at|box|edge, force: [Fx, Fy(, Fz)] N}] as MAXIMUM service loads; keep_out / keep_in "
+        "[{box|circle|ring|sphere|cylinder}]; type stiffness|mechanism|thermal|stiffness+thermal (+ output for "
+        "mechanisms); material {E, nu, yield MPa, density g/cm3, k W/(m K)}; safety_factor (default and minimum 2: "
+        "design = 2 x maximum force and heat); interfaces [{type bolt|tapped|pin|pad, at, size M, role "
+        "support|load|thermal, force, heat_W, sink, grade, axis, length}] -> holes, keep-in rings and joint checks; "
+        "critical [{shape, reason}] stay solid; thermal {reference_C, max_temperature_C, sources [{sel, power_W}], "
+        "sinks [{sel}], convection [{sel|boundary: 'all', h_W_m2K}], plate_faces {h_W_m2K, sides}}; objective "
+        "{stiffness, thermal} weights; iterations, filter_radius, penalty")},
     "tpd": {"type": "string", "description": "ToPy problem definition text or file path"},
     "job": {"type": "string", "description": "job id to poll / build"},
     "wait": {"type": "number", "default": 25, "description": "seconds to wait in this call (max 30); poll longer jobs with job"},
@@ -511,11 +517,15 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="topology_optimize",
-            description=("Structural topology optimisation (SIMP; Python 3 port of ToPy): minimum compliance "
-                         "(stiffness) or compliant mechanism, 2D plate or 3D. Start a job with 'problem' (spec in mm) "
-                         "or 'tpd' (ToPy file text/path); it runs in the background and this call waits up to 'wait' "
-                         "s. Poll with 'job'. 'build': true turns a finished 2D result into an extruded SolidWorks "
-                         "plate (3D: imports the STL as a mesh solid). Returns a small preview image."),
+            description=("Topology optimisation (SIMP; Python 3 port of ToPy plus a thermal extension): stiffness, "
+                         "steady heat conduction with convection films, or both with normalised weights; compliant "
+                         "mechanisms; 2D plate or 3D. Loads and heat are maximum service values and the run uses "
+                         "safety_factor x maximum (at least 2); bolt, tapped-hole, pin and pad interfaces get standard "
+                         "holes and keep-in rings, and the result carries stress, temperature and per-joint checks at "
+                         "the design values. Start a job with 'problem' (spec in mm) or 'tpd'; it runs in the "
+                         "background and this call waits up to 'wait' s. Poll with 'job'. 'build': true turns a finished "
+                         "2D result into an extruded SolidWorks plate (3D: imports the STL as a mesh solid). Returns a "
+                         "small preview image."),
             inputSchema=_TOPOLOGY_SCHEMA
         ),
     ] + design_definitions(include_native=True)
@@ -1021,7 +1031,7 @@ def _topology_handler(arguments: dict) -> Dict:
             data["progress"] = read("progress.json")
             return _ok("running: poll again with job=%s" % job_id, data)
         result = read("result.json") or {}
-        data.update({k: result.get(k) for k in ("summary", "physical", "cad", "grey_fraction")})
+        data.update({k: result.get(k) for k in ("summary", "physical", "cad", "grey_fraction", "safety", "auto")})
         meta = result.get("meta") or {}
         data["grid"] = {"elements": meta.get("n"), "element_size": meta.get("h"), "size": meta.get("size")}
         images = []
@@ -1040,7 +1050,10 @@ def _topology_handler(arguments: dict) -> Dict:
                 data["part"] = cad.build_plate(sw_automation.app, loops, thick, spacing=float(meta.get("h") or 1.0))
             else:
                 data["part"] = cad.import_stl(sw_automation.app, str(job / "result.stl"))
-        return _ok("topology optimisation done" + (" and part built" if arguments.get("build") else ""), data, images)
+        safety = result.get("safety") or {}
+        verdict = "" if not safety else "; checks at %g x maximum force and heat: %s" % (
+            safety.get("safety_factor", 2), "pass" if safety.get("pass") else "FAIL, %d issue(s)" % len(safety.get("issues", [])))
+        return _ok("topology optimisation done" + verdict + (" and part built" if arguments.get("build") else ""), data, images)
     except Exception as e:
         logger.error(f"topology_optimize error: {e}\n{traceback.format_exc()}")
         return _fail(f"topology_optimize error: {type(e).__name__}: {e}")

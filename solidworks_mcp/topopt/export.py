@@ -20,8 +20,8 @@ def _to_y_up(x2d: np.ndarray) -> np.ndarray:
 
 
 def preview_png(x: np.ndarray, meta: Optional[Dict] = None, width: int = 512) -> bytes:
-    """2D: density map (black = solid) with supports (blue) and loads (red);
-    3D: three maximum-intensity projections (front XY, top XZ, side ZY)."""
+    """2D: density map (black = solid) with supports (blue), loads (red), heat sources (orange),
+    heat sinks (cyan) and joint keep-in rings (magenta); 3D: three maximum-intensity projections."""
     from PIL import Image, ImageDraw
     if x.ndim == 2:
         ny, nx = x.shape
@@ -49,6 +49,18 @@ def preview_png(x: np.ndarray, meta: Optional[Dict] = None, width: int = 512) ->
                 du, dv = 40 * fx / L, -40 * fy / L
                 d.line([u, v, u + du, v + dv], fill=col, width=3)
                 d.ellipse([u - 4, v - 4, u + 4, v + 4], fill=col)
+            for joint in meta.get("interfaces") or []:
+                if joint.get("keep_in_radius_mm"):
+                    u, v = px(joint["centre"])
+                    r = joint["keep_in_radius_mm"] / h * s
+                    d.ellipse([u - r, v - r, u + r, v + r], outline=(200, 40, 200), width=2)
+            thermal = meta.get("thermal") or {}
+            for p in thermal.get("sources_xy", []):
+                u, v = px(p)
+                d.ellipse([u - 6, v - 6, u + 6, v + 6], fill=(245, 140, 20))
+            for p in thermal.get("sinks_xy", []):
+                u, v = px(p)
+                d.rectangle([u - 5, v - 5, u + 5, v + 5], fill=(20, 180, 210))
         buf = io.BytesIO()
         img.save(buf, "PNG", optimize=True)
         return buf.getvalue()
