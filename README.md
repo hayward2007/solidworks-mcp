@@ -18,7 +18,7 @@
 
 CLI와 Claude/Codex에서 **조사 → 증거 → 구체적 형상·치수 → 대안 비교 → 정량·외형 검토 → 개선**을
 진행합니다. 품질 우선 RAG, SQLite 증거/설계 이력, 계산 재검증, 사용자 검토 패킷을 추가했습니다.
-기존 CAD 도구 34개를 유지하고 Windows 서버에 Design Studio 도구 17개를 더했습니다.
+기존 CAD·검증 도구 35개(표준 검증 배터리 `verify_model` 포함)를 유지하고 Windows 서버에 Design Studio 도구 17개를 더했습니다.
 독립 서버의 16개 도구는 macOS/Linux에서도 실행되며, 실제 CAD 조작·native capture는 Windows에서 합니다.
 
 ```sh
