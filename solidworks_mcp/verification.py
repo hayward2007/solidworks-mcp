@@ -17,6 +17,7 @@ import tempfile
 from collections import Counter
 
 from .com import byref_bool, call, features, val
+from .precision import FEATURE_ERROR_LIMIT, LENGTH_DECIMALS, MASS_DECIMALS
 
 DOC_TYPES = {1: "part", 2: "assembly", 3: "drawing"}
 LENGTH_UNITS = {0: "mm", 1: "cm", 2: "m", 3: "inch", 4: "ft", 5: "ft-in", 8: "micron"}
@@ -40,15 +41,15 @@ RENDER_DIR = os.path.join(tempfile.gettempdir(), "solidworks_mcp", "renders")
 
 
 def _mm(values):
-    return [round(v * 1000.0, 3) for v in values]
+    return [round(v * 1000.0, LENGTH_DECIMALS) for v in values]
 
 
 def _box(six):
     lo, hi = _mm(six[:3]), _mm(six[3:6])
-    return {"min": lo, "max": hi, "size": [round(b - a, 3) for a, b in zip(lo, hi)]}
+    return {"min": lo, "max": hi, "size": [round(b - a, LENGTH_DECIMALS) for a, b in zip(lo, hi)]}
 
 
-def feature_errors(doc, limit=20, tree=None):
+def feature_errors(doc, limit=FEATURE_ERROR_LIMIT, tree=None):
     """Features (or mates) that fail to rebuild: [{feature, type, code, warning}]."""
     try:                                   # one call answers the common case: nothing is wrong
         if not val(doc.Extension, "GetWhatsWrongCount"):
@@ -85,9 +86,9 @@ def mass_properties(mp):
     """
     mass, density = mp.Mass, mp.Density
     return {
-        "volume_mm3": round(mp.Volume * 1e9, 2),
-        "area_mm2": round(mp.SurfaceArea * 1e6, 2),
-        "mass_kg": round(mass, 5),
+        "volume_mm3": round(mp.Volume * 1e9, MASS_DECIMALS["volume_mm3"]),
+        "area_mm2": round(mp.SurfaceArea * 1e6, MASS_DECIMALS["area_mm2"]),
+        "mass_kg": round(mass, MASS_DECIMALS["mass_kg"]),
         "density_kg_m3": round(density, 1),
         "center_mm": _mm(mp.CenterOfMass),
     }
@@ -316,6 +317,8 @@ def check_interference(doc, limit=20):
     if doc is None or val(doc, "GetType") != 2:
         return {"success": False, "message": "the active document is not an assembly"}
     manager = val(doc, "InterferenceDetectionManager")
+    if manager is None:                    # e.g. an assembly opened invisibly (DocumentVisible False)
+        return {"success": False, "message": "interference detection unavailable: make the assembly the active, visible document"}
     manager.TreatCoincidenceAsInterference = False
     manager.TreatSubAssembliesAsComponents = False
     manager.IncludeMultibodyPartInterferences = False

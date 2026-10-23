@@ -36,7 +36,7 @@ def definitions(include_native=False):
         tool("design_learn", "Index a currently approved revision as a scoped design example/guide for future RAG. Preserves all assumptions, evidence and limits; never promotes it to a standard. Stale/revoked cases are excluded from retrieval.", {**project, "revision": string}, ["project", "revision"]),
     ]
     if include_native:
-        result.append(tool("design_capture", "Read-only snapshot of the active native SolidWorks document, feature dimensions, reported errors, mass/box and saved/unsaved provenance. No edits, rebuild or save. Extraction failures stay explicit.", project, ["project"]))
+        result.append(tool("design_capture", "Read-only snapshot of the active native SolidWorks document, feature dimensions, reported errors, mass/box and saved/unsaved provenance. Metrics (mass_kg, volume_mm3, area_mm2, tight extent_x/y/z, rebuild_errors, solid_bodies or components/mates) carry uncertainty and its basis, so checks can cite the capture evidence directly. No edits, rebuild or save. Extraction failures stay explicit.", project, ["project"]))
     return result
 
 

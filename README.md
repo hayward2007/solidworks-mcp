@@ -64,7 +64,7 @@ The server has to run on the user's Windows PC next to SolidWorks; never install
    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1 | iex"
    ```
 
-   It puts the code in `%USERPROFILE%\solidworks-mcp` (or updates it), creates `.venv`, installs the requirements, self-tests the server (51 tools, including Design Studio), registers `solidworks` in Claude Desktop and in Claude Code (`claude mcp add --scope user`) and copies the skill to `~/.claude/skills/solidworks-design`. The first run takes a few minutes; success ends with `All set`.
+   It puts the code in `%USERPROFILE%\solidworks-mcp` (or updates it), creates `.venv`, installs the requirements, self-tests the server (52 tools, including Design Studio), registers `solidworks` in Claude Desktop and in Claude Code (`claude mcp add --scope user`) and copies the skill to `~/.claude/skills/solidworks-design`. The first run takes a few minutes; success ends with `All set`.
    - If it reports `Python 3.10 or newer (64-bit) was not found`, ask the user, then install Python 3.13 with winget and continue:
      `powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1))) -InstallPython"`
    - Other options go in the same place: `-InstallDir <path>`, `-NoClaudeDesktop`, `-NoClaudeCode`, `-NoSkill`, `-Uninstall`.
@@ -275,6 +275,7 @@ Claude는 보통 `create_sketch` → `draw_*` → `close_sketch` → `extrude_sk
 | 검증 | `render_views` | 표준 뷰를 작은 라벨 이미지 하나로 (스케치·평면 숨김, 사용자 뷰 복원) | `views`, `size`(기본 384), `hide_references` |
 | 검증 | `export_model` | STEP, STL, 3MF, IGES, Parasolid 등으로 사본 저장 | `format`(기본 step), `path` |
 | 검증 | `check_interference` | 어셈블리 부품 사이 간섭 부피(mm³) | - |
+| 검증 | `verify_model` | 표준 검증 배터리(V1 파트, V2 어셈블리): 값·불확도·한계·통과 고정 행, 간섭 허용치, 자유·과구속 부품, 다른 열린 창, 이슈 후보 | `targets`, `allow`, `parked` |
 | 지식 | `knowledge_search` | 설계 지식 베이스 검색 (한글·영어 키워드) | `query`, `limit` |
 | 지식 | `knowledge_get` | 섹션 하나, 주제 전체, 또는 `index` | `id` |
 | 기어 | `gear_design` | 기어 치수, 전위, 중심거리, 물림률, 간섭 경고 계산 (CAD 없이) | `kind`, `module`, `teeth` |
@@ -327,6 +328,8 @@ result = report()                        # 오류, 바디, 경계 상자, 질량
 | 기어 생성기 | `gear-generators.md` | create_gear 종류, 좌표계, 기본값 근거, 자가 검증, 어셈블리 배치 |
 | 토폴로지 최적화 | `topology-optimization.md` | 문제 정의(mm), 기본값 근거, 결과 해석, 파트로 만들기 |
 | API 레시피 | `solidworks-api.md` | 검증된 SolidWorks API 호출 (스케치, 로프트, 스윕, 패턴, 구성, 메이트, 검사, STL 불러오기) |
+| 어셈블리 가이드 | `assembly-guide.md` | 조립 절차 A0–A8, 메이트·기준·자세 규칙, 기구 검증(솔버/기하 자세), 파킹, 창 닫기, 함정 표 |
+| 설계 워크플로 | `design-workflow.md` | 설계→모델링→검증→이슈 분류 플라이휠, 검증 배터리 V1–V6, 시간 제한, 루프 보고 형식 |
 
 노트를 추가하려면 같은 형식(맨 위 `title`, `tags`, `summary`와 `## ` 섹션)으로 `knowledge/`에 `.md` 파일을 넣고 Claude를 다시 시작하세요. 수치를 넣을 때는 출처(규격 번호, 카탈로그)를 함께 적어 주세요.
 
@@ -482,7 +485,7 @@ MIT 라이선스예요 ([LICENSE](LICENSE)). 원본 프로젝트: [alisamsam/Sol
 
 SolidWorks MCP Server is a [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent such as Claude drive SolidWorks. Instead of clicking through menus, you describe the geometry you want and Claude builds it through the SolidWorks COM API: parts, sketches and features.
 
-- 51 tools (34 existing CAD + 17 Design Studio): connection, documents, sketches, features, utilities, `execute_python` for direct SolidWorks API access, verification (text-to-CAD), design-knowledge search, gear generation and topology optimization
+- 52 tools (35 CAD and verification + 17 Design Studio): connection, documents, sketches, features, utilities, `execute_python` for direct SolidWorks API access, verification (text-to-CAD), design-knowledge search, gear generation and topology optimization
 - Agent working rules (token budget, design rationale) are applied automatically in every session
 - SolidWorks 2023–2025, installation auto-detected from the registry
 - Units: mm, cm, m, inch, ft (default mm)
@@ -542,7 +545,7 @@ In Claude, Settings → Developer should show the `solidworks` server as running
 2. Finds a 64-bit Python 3.10+: the `py -0p` list, `py -3`, `python` on PATH, then `%LOCALAPPDATA%\Python\pythoncore-3.*`, `%LOCALAPPDATA%\Programs\Python\Python3*` and `%ProgramFiles%\Python3*`. It picks the newest of 3.10–3.14, which numpy, scipy and pywin32 ship wheels for. Without one it offers to install Python 3.13 with winget (`-InstallPython` installs it without asking).
 3. Creates a virtual environment in `.venv` inside the project folder (reuses a working one).
 4. Installs `requirements.txt` (`mcp` 1.x, `pywin32`, `python-dotenv`, `Pillow`, `numpy`, `scipy`).
-5. Self-test: starts the server over stdio, exactly like Claude Desktop does, and checks the MCP handshake and the tool list (51 tools).
+5. Self-test: starts the server over stdio, exactly like Claude Desktop does, and checks the MCP handshake and the tool list (52 tools).
 6. Registers the `solidworks` server in Claude Desktop's config. Other servers and settings are kept, and a `claude_desktop_config.json.bak-date-time` backup is written before any change. The Microsoft Store (MSIX) config location is updated too.
 7. If Claude Code (the `claude` CLI) is installed, registers the server with `claude mcp add --scope user` and copies the design skill to `~/.claude/skills/solidworks-design`. It also writes `dist\solidworks-design.zip` for uploading the skill to Claude Desktop / claude.ai.
 8. Saves everything it printed to `setup_mcp.log`.
@@ -652,6 +655,7 @@ Every tool that takes lengths also accepts an optional `unit` (mm, cm, m, inch, 
 | Verification | `render_views` | One small labelled image of standard views (sketches/planes hidden, user's view restored) | `views`, `size` (default 384), `hide_references` |
 | Verification | `export_model` | Save a copy as STEP, STL, 3MF, IGES, Parasolid, ... | `format` (default step), `path` |
 | Verification | `check_interference` | Interference volumes (mm³) between assembly components | - |
+| Verification | `verify_model` | Standard verification battery (V1 part, V2 assembly): fixed rows value/uncertainty/limit/pass, interference allowances, free and over-constrained components, other open windows, issue candidates | `targets`, `allow`, `parked` |
 | Knowledge | `knowledge_search` | Search the design knowledge base (Korean or English keywords) | `query`, `limit` |
 | Knowledge | `knowledge_get` | One section, a whole topic, or `index` | `id` |
 | Gears | `gear_design` | Gear dimensions, profile shifts, centre distance, contact ratio, interference warnings (no CAD) | `kind`, `module`, `teeth` |
@@ -704,6 +708,8 @@ The agent searches the Markdown notes in `knowledge/`. Notes are written in Engl
 | Gear generators | `gear-generators.md` | create_gear types, frames, defaults and their basis, self-checks, assembly placement |
 | Topology optimization | `topology-optimization.md` | problem spec in mm, defaults and basis, reading results, turning them into parts |
 | API recipes | `solidworks-api.md` | verified SolidWorks API calls (sketches, lofts, sweeps, patterns, configurations, mates, checks, STL import) |
+| Assembly guide | `assembly-guide.md` | assembly procedure A0-A8, mate/datum/pose rules, motion checks (solver or geometric poses), parking, closing windows, pitfall table |
+| Design workflow | `design-workflow.md` | design-model-verify-triage flywheel, verification batteries V1-V6, time boxes, loop report format |
 
 To add a note, put a `.md` file in `knowledge/` with the same layout (`title`, `tags`, `summary` at the top, `## ` sections) and restart Claude. Give a source (standard number, catalogue) for every value.
 

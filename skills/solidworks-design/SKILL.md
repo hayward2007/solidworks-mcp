@@ -15,6 +15,8 @@ If no solidworks tools (`execute_python`, `knowledge_get`, `gear_design`, ...) a
 - If `design_context` is available, start in `mode="quality"`, then `design_schema`. Use portable Design Studio for evidence, retrieval, proposals and review, and the Windows server for native CAD.
 - Load `product-design-policy`, `design-evidence` and `design-review` through `knowledge_get` when only legacy tools are exposed. These supersede older token-first defaults.
 - `knowledge_get("agent-guide")`: build-verify loop, token rules, quality gate, report format.
+- `knowledge_get("design-workflow")`: the design -> model -> verify -> triage loop, standard verification batteries, time boxes, issue classes and the loop report. Every task runs in these loops.
+- Assemblies: `knowledge_get("assembly-guide")` before inserting the first component (A0-A8, mate and pose rules, pitfalls).
 - `knowledge_get("design-policy#basis-ladder")` and `knowledge_get("design-policy#neutral-defaults")`.
 - Anything else (gears, bearings, fasteners, fits, shafts and keys, materials, DFM, API recipes): `knowledge_search` first, then `knowledge_get` for one section only.
 
@@ -31,13 +33,13 @@ For vague requests, read the open documents and existing geometry first, state a
 - Everything else: `execute_python`, one modeling stage per call, parameters at the top, injected helpers (`val`, `call`, `arr`, `select`, `plane`, `feats`, `report`, `render`, `store`, `mm`, `deg`). API units are metres and radians.
 
 ## 4. Verify every stage
-- `report()` inside the script or `model_report`: no rebuild errors, intended body count, box and mass as expected.
+- `verify_model` (V1 part, V2 assembly) or `report()` inside the script: no rebuild errors, intended body count, box and mass as expected; capture metrics carry uncertainty and can be cited by checks.
 - Obtain enough consistent orthographic, section and material views to judge geometry and styling. Do not reduce decisive evidence to save tokens; this system does not measure provider image token cost.
-- Assemblies: `check_interference` must be 0 except intended press fits.
-- Fix the first failure only; after 3 failed attempts on one stage change the approach.
+- Assemblies: `verify_model` V2 with justified allowances only (intended press fits, known tooth residue); motion by the pose table of assembly-guide A6; park before render or capture.
+- Fix the first failure only; after 3 failed attempts on one stage change the approach. Log every failure as a classified issue (SPEC, DATA, MODEL, ASSEMBLY, TOOL, METHOD) and respect the time boxes: a solver motion check gets two attempts, any debugging thread about 20 minutes before reporting options.
 
 ## 5. Respect the user's open work
-Do not modify, save or close documents the user already has open unless asked. Build trials in new parts, close them afterwards and re-activate the user's document.
+Do not modify, save or close documents the user already has open unless asked. Build trials in new parts, close them afterwards and re-activate the user's document. Save and close each part window as soon as the part passes V1; keep only the assembly open while assembling.
 
 ## 6. Report
 Key parameters with basis tags, the check numbers, open issues and at most 3 next options. Print only counts and key values, never whole trees or point lists.

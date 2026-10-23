@@ -16,8 +16,8 @@ summary: Investigate actual geometry, compare justified alternatives, review app
    - Lightweight parts: `topology_optimize` on the design space, `build: true` for the plate, then add interface features; see `topology-optimization`.
 3. **Plan the feature order**: base feature -> main features -> patterns/mirrors -> holes and fits -> fillets/chamfers last.
 4. **Build one stage per `execute_python` call**, parameters at the top of the script, helpers injected (see below).
-5. **Verify every stage**: `report()` inside the script (or `model_report`), actual dimension checks, material/density and adequate visual evidence. Compare silhouette, proportions, seams, radii and CMF alongside numerical criteria.
-6. **Fix the first failure only** and re-run that stage. After 3 failed attempts on the same stage, change the approach (different feature type, simpler profile) or ask.
+5. **Verify every stage** with the standard batteries of `design-workflow`: `verify_model` (V1 part, V2 assembly) or `report()` inside the script, actual dimension checks, material/density and adequate visual evidence. Compare silhouette, proportions, seams, radii and CMF alongside numerical criteria. Assemblies follow `assembly-guide` A0-A8; save and close each finished part window.
+6. **Fix the first failure only** and re-run that stage. After 3 failed attempts on the same stage, change the approach (different feature type, simpler profile) or ask. Every failure is an issue with a class (SPEC, DATA, MODEL, ASSEMBLY, TOOL, METHOD) that routes the next loop (`design-workflow#stage-t-issue-log-and-routing`); keep the time boxes there.
 7. **Submit a full proposal and human review packet before design improvement handoff.** Use three meaningful alternatives and quantified deltas. Never self-record the user's approval. Existing separately authorized routine CAD work does not require a new product-design approval flow.
 
 ## Understanding vague requests
@@ -41,12 +41,12 @@ summary: Investigate actual geometry, compare justified alternatives, review app
 - Body count is as intended (usually 1 solid body per part).
 - Box and key dimensions match the spec (modeled values exact; tolerances belong to drawings).
 - Mass and center of mass are plausible for the material (density check).
-- Assemblies: `check_interference` total is 0 (or only intended press fits), mates have no errors, free motion is what was asked for.
+- Assemblies: `verify_model` V2 passes (no mate errors, unallowed interference 0 with allowances justified, free components match the intended motion, parked before render or capture), poses per `assembly-guide` A6.
 - Manufacturability: walls, radii, clearances, hole depths meet `dfm` for the chosen process.
 - Every key dimension has a basis tag; untagged numbers are bugs.
 
 ## execute_python helpers
-Injected names: `val`, `call`, `arr`, `strings`, `byref_int`, `byref_bool`, `select`, `plane`, `feats`, `feat`, `active`, `report`, `render`, `store`, `mm`, `deg`, plus `sw`, `doc`, `automation`, `math`, `json`.
+Injected names: `val`, `call`, `arr`, `strings`, `byref_int`, `byref_bool`, `byref_double`, `select`, `plane`, `feats`, `feat`, `active`, `report`, `render`, `store`, `mm`, `deg`, plus `sw`, `doc`, `automation`, `math`, `json`.
 - Units in the API are metres and radians: multiply mm values by `mm`, degrees by `deg`.
 - `plane("front")` returns the localized default plane name ("정면" in Korean SolidWorks).
 - `report()` returns the compact model report; `render("iso")` or `render(("iso", "front"))` attaches a small image to the tool result.
@@ -63,7 +63,6 @@ result = report()
 ```
 
 ## Reporting format
-1. One-line spec and assumptions.
-2. Table of key parameters: value, unit, basis tag.
-3. Verification numbers: box, mass, errors, interference.
-4. Open issues and at most 3 next options.
+Use the loop report of `design-workflow`: goal and changes, the verification rows, issues (new, open, closed),
+next loop plan with at most 3 options for the user, and housekeeping (saved files, closed windows). Key
+parameters appear with value, unit and basis tag; a short summary line does not replace the full spec.

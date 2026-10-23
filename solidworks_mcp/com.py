@@ -51,6 +51,11 @@ def byref_bool(value=False):
     return win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_BOOL, value)
 
 
+def byref_double(value=0.0):
+    """Out parameter of type double, e.g. IBody2.GetExtremePoint(dx, dy, dz, x, y, z); read .value."""
+    return win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_R8, float(value))
+
+
 def features(doc):
     """All top-level features of a document, in tree order."""
     out, feat = [], val(doc, "FirstFeature")

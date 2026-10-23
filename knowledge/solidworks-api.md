@@ -11,7 +11,7 @@ summary: Calls and argument lists that are known to work through this server, pl
 - The API uses metres and radians (`mm`, `deg` helpers).
 - Localized UI: default planes and origin are named per language (Korean: 정면, 윗면, 우측면, 원점). Use `plane("front")`. Feature type names (`GetTypeName2`) are language independent.
 - Named views like "*Isometric" fail in localized UI: use view ids, `call(doc, "ShowNamedView2", "", 7)` (1 front, 2 back, 3 left, 4 right, 5 top, 6 bottom, 7 iso).
-- After creating a feature, rename it right away: `call(doc, "FeatureByPositionReverse", 0).Name = "..."`.
+- After creating a feature in a part, rename it right away: `call(doc, "FeatureByPositionReverse", 0).Name = "..."`. Not in an assembly: there the last feature is the MateGroup (Korean 메이트); find new mates with `FeatureByName` or a feature-list diff (assembly-guide).
 - Signatures: `pythoncom.LoadTypeLib(r"C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\sldworks.tlb")`; enum values in `swconst.tlb`.
 
 ## 2D sketch and revolve
@@ -70,6 +70,7 @@ call(doc, "ShowConfiguration2", "기본")
 In an assembly: `component.ReferencedConfiguration = "LH"` then `val(asm, "EditRebuild3")`.
 
 ## Assembly placement and mates
+- Procedure, mate rules, parking and pose tests: `assembly-guide` (A0-A8). The lines below are API details.
 - Component pose: rows of `Transform2.ArrayData[0:9]` are the component X, Y, Z axes in assembly coordinates, `[9:12]` the origin (metres). Set with `comp.Transform2 = call(val(sw, "GetMathUtility"), "CreateTransform", arr(rows + origin + [1, 0, 0, 0]))`.
 - Selection strings: `f"Point1@원점@{comp}@{asm_title}"` type `EXTSKETCHPOINT`; `f"{axis}@{comp}@{asm_title}"` type `AXIS`; assembly origin `"Point1@원점"`.
 - `call(asm, "AddMate5", kind, align, flip, dist, 0, 0, ratio_num, ratio_den, angle, 0, 0, positioning_only, lock_rotation, 0, byref_int())` with kind 0 coincident, 1 concentric, 2 perpendicular, 3 parallel, 5 distance, 6 angle, 10 gear. The error status 1 means success.
@@ -84,6 +85,8 @@ body_copy = val(body, "Copy"); call(body_copy, "ApplyTransform", transform)
 hit = call(val(body, "Copy"), "Operations2", 15901, body_copy, byref_int())   # temporary intersect
 ```
 Temporary body booleans are fast (about 0.3 s for two gears) and accept mirror transforms; use them to test meshes or clearances before adding features.
+- Tight extents: `call(body, "GetExtremePoint", dx, dy, dz, x, y, z)` with three `byref_double()` outputs. Component bodies from `GetBodies2` are in part coordinates: map the direction in with the component transform rows and the point back out. `GetBodyBox` and the assembly `GetBox` are not tight (+0.2 to +0.4 mm on gears).
+- Open without a window: `call(sw, "DocumentVisible", False, doc_type)` before `OpenDoc6`, and `True` afterwards. Interference detection needs the assembly visible and active (its manager is `None` otherwise).
 
 ## Images and export
 - `render_views` / `render()` hide sketches, planes and axes, save PNGs, return one small grid, and restore the user's view.

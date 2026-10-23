@@ -208,6 +208,17 @@ class LedgerAndReview(TemporaryStore):
         self.assertFalse(gate["checks"][0]["passed"])
         self.assertAlmostEqual(gate["checks"][0]["margin"], -.01)
 
+    def test_capture_metric_format_satisfies_a_check(self):
+        from solidworks_mcp.design.inspect import _metric
+        aid = self.packet["baseline_artifact_ids"][0]
+        ev = self.store.add_evidence("demo", "measured", "Test-only metric in the design_capture format", [aid], "Test fixture output; not product evidence",
+                                     {"metrics": {"deflection": _metric(.25, "mm", .00052, "test-only basis")}})
+        p = deepcopy(self.packet); p["checks"][0].update(calculation_ref="", evidence_id=ev["id"])
+        gate = self.engine.evaluate("demo", p)
+        self.assertTrue(gate["checks"][0]["passed"])
+        self.assertAlmostEqual(gate["checks"][0]["margin"], .3 - .25 - .00052)
+        self.assertNotIn("measurement_uncertainty_missing", {b["code"] for b in gate["blockers"]})
+
     def test_wrong_parent_and_failed_revision_cannot_be_approved(self):
         with self.assertRaisesRegex(ValueError, "parent"): self.engine.submit("demo", self.packet)
         bad = deepcopy(self.packet)
@@ -316,6 +327,7 @@ class Meshes(unittest.TestCase):
                 self.assertTrue(out["consistent_winding"])
                 self.assertAlmostEqual(out["volume_mm3"], 1/6)
                 self.assertEqual(out["box_mm"]["size"], [1,1,1])
+                self.assertEqual(out["metrics"]["extent_x"]["uncertainty"], 0.0)
                 self.assertAlmostEqual(inspect_stl(p, "m")["volume_mm3"], 1e9/6)
 
     def test_open_mesh_does_not_claim_solid_volume(self):
@@ -327,6 +339,15 @@ class Meshes(unittest.TestCase):
             with self.assertRaises(ValueError): inspect_stl(p, "unspecified")
             p.write_text("solid broken\nvertex nan 0 0\nvertex 0 1 0\nvertex 0 0 1\nendsolid")
             with self.assertRaises(ValueError): inspect_stl(p, "mm")
+
+
+def extreme_box(low, high):
+    """Fake IBody2.GetExtremePoint of an axis-aligned box given in metres (part frame)."""
+    def extreme(dx, dy, dz, x, y, z):
+        for ref, d, a, b in ((x, dx, low[0], high[0]), (y, dy, low[1], high[1]), (z, dz, low[2], high[2])):
+            ref.value = b if d > 0 else a if d < 0 else (a + b) / 2
+        return True
+    return extreme
 
 
 class NativeAdapter(unittest.TestCase):
@@ -342,8 +363,8 @@ class NativeAdapter(unittest.TestCase):
             spec.loader.exec_module(server)
             tools = asyncio.run(server.list_tools())
             names = {t.name for t in tools}
-            self.assertEqual(len(names), 51)
-            self.assertTrue({"execute_python", "create_gear", "topology_optimize", "design_capture", "design_submit"} <= names)
+            self.assertEqual(len(names), 52)
+            self.assertTrue({"execute_python", "create_gear", "topology_optimize", "design_capture", "design_submit", "verify_model"} <= names)
             out = asyncio.run(server.call_tool("design_calculate", {"kind": "raked_panel", "inputs": {"height_mm": 150, "rake_deg": 35, "camera_length_mm": 124, "camera_depth_mm": 26}}))
             self.assertIn("SUCCESS", out[0].text)
 
@@ -363,11 +384,14 @@ class NativeAdapter(unittest.TestCase):
         cylinder = ns(IsPlane=lambda: False, IsCylinder=lambda: True, CylinderParams=[.01,.02,.03,0,0,1,.004])
         plane = ns(IsPlane=lambda: True, PlaneParams=[0,0,1,0,0,.005])
         faces = [ns(GetSurface=lambda: cylinder, GetArea=lambda: .001), ns(GetSurface=lambda: plane, GetArea=lambda: .002)]
-        body = ns(Name="Body", GetFaces=lambda: faces)
+        circle = ns(IsLine=lambda: False, IsCircle=lambda: True)
+        body = ns(Name="Body", GetFaces=lambda: faces, GetEdges=lambda: [ns(GetCurve=lambda: circle)],
+                  GetExtremePoint=extreme_box((-.01, 0, -.02), (.01, .03, .02)))
         doc = ns(ConfigurationManager=ns(ActiveConfiguration=ns(Name="Default")), GetBodies2=lambda *args: [body])
-        report = {"type": "part", "errors": [], "unsaved_changes": True, "mass": {"mass_kg": 1.2}, "bodies": [{}], "box_mm": {"size": [20,30,40]}}
+        report = {"type": "part", "errors": [], "unsaved_changes": True, "mass": {"mass_kg": 1.2}, "bodies": [{}], "box_mm": {"size": [21,31,41]}}
         backend = types.ModuleType("solidworks_mcp.com")
         backend.val, backend.call, backend.features = val, call, lambda d: [feature]
+        backend.byref_double = lambda value=0.0: ns(value=value)
         verification = types.ModuleType("solidworks_mcp.verification")
         verification.model_report = lambda d: deepcopy(report)
         with patch.dict(sys.modules, {"solidworks_mcp.com": backend, "solidworks_mcp.verification": verification}):
@@ -380,6 +404,153 @@ class NativeAdapter(unittest.TestCase):
         self.assertEqual(out["surface_observations"][0]["faces"][0]["radius_mm"], 4)
         self.assertEqual(out["surface_observations"][0]["faces"][1]["origin_mm"], [0,0,5])
         self.assertIsNone(out["source_file_sha256"])
+        metrics = out["metrics"]
+        # Tight extents replace the approximate report box; every metric can satisfy a check.
+        self.assertEqual([metrics["extent_" + a]["value"] for a in "xyz"], [20.0, 30.0, 40.0])
+        self.assertAlmostEqual(metrics["extent_x"]["uncertainty"], 0.00052)
+        self.assertAlmostEqual(metrics["mass_kg"]["uncertainty"], 5e-6 + 1e-8 * 1.2)
+        self.assertEqual((metrics["rebuild_errors"]["value"], metrics["rebuild_errors"]["uncertainty"]), (0, 0))
+        self.assertEqual(metrics["solid_bodies"]["value"], 1)
+        self.assertTrue(all(m["uncertainty"] is not None and m["uncertainty_basis"] for m in metrics.values()))
+
+    def test_assembly_capture_uses_component_frames_and_flags_unresolved_parts(self):
+        from solidworks_mcp.design.inspect import capture_native
+        ns = types.SimpleNamespace
+        def val(obj, name):
+            out = getattr(obj, name)
+            return out() if callable(out) else out
+        def call(obj, name, *args): return getattr(obj, name)(*args)
+        freeform = ns(IsPlane=lambda: False, IsCylinder=lambda: False, IsCone=lambda: False, IsSphere=lambda: False, IsTorus=lambda: False)
+        washer = ns(Name="Body", GetFaces=lambda: [ns(GetSurface=lambda: freeform)], GetEdges=lambda: [],
+                    GetExtremePoint=extreme_box((-.016, -.016, 0), (.016, .016, .0009)))
+        # Part X -> X, part Y -> -Z, part Z -> Y, origin at Y -18.78 mm (a side washer of the differential).
+        rotated = ns(ArrayData=[1, 0, 0, 0, 0, -1, 0, 1, 0, 0, -.01878, 0, 1, 0, 0, 0])
+        common = dict(GetPathName=lambda: "C:/x.sldprt", ReferencedConfiguration="Default", Transform2=rotated)
+        washer_comp = ns(Name2="WASHER-1", IsSuppressed=lambda: False, GetBodies2=lambda kind: [washer],
+                         GetTotalTransform=lambda apply: rotated, **common)
+        suppressed = ns(Name2="SUPPRESSED-1", IsSuppressed=lambda: True, **common)
+        lightweight = ns(Name2="LIGHT-1", IsSuppressed=lambda: False, GetBodies2=lambda kind: None, GetModelDoc2=lambda: None, **common)
+        subassembly = ns(Name2="SUB-1", IsSuppressed=lambda: False, GetBodies2=lambda kind: None,
+                         GetModelDoc2=lambda: ns(GetType=lambda: 2), **common)
+        doc = ns(ConfigurationManager=ns(ActiveConfiguration=ns(Name="Default")),
+                 GetComponents=lambda top: [washer_comp, suppressed, lightweight, subassembly])
+        report = {"type": "assembly", "errors": [], "unsaved_changes": False,
+                  "mass": {"mass_kg": 0.0034, "volume_mm3": 435.4, "area_mm2": 1115.14},
+                  "components": {"top_level": 4, "total": 4, "suppressed": 1}, "mates": 3, "box_mm": {"size": [40, 40, 40]}}
+        backend = types.ModuleType("solidworks_mcp.com")
+        backend.val, backend.call, backend.features = val, call, lambda d: []
+        backend.byref_double = lambda value=0.0: ns(value=value)
+        verification = types.ModuleType("solidworks_mcp.verification")
+        verification.model_report = lambda d: deepcopy(report)
+        with patch.dict(sys.modules, {"solidworks_mcp.com": backend, "solidworks_mcp.verification": verification}):
+            out = capture_native(doc)
+        self.assertEqual(out["exact_box_mm"]["min"], [-16.0, -18.78, -16.0])
+        self.assertEqual(out["exact_box_mm"]["max"], [16.0, -17.88, 16.0])
+        metrics = out["metrics"]
+        self.assertEqual([metrics["extent_" + a]["value"] for a in "xyz"], [32.0, 0.9, 32.0])
+        self.assertAlmostEqual(metrics["volume_mm3"]["uncertainty"], 0.005 + 1e-4 * 435.4)    # freeform face
+        self.assertEqual((metrics["mates"]["value"], metrics["suppressed_components"]["value"]), (3, 1))
+        self.assertTrue(out["incomplete"])                                                     # lightweight part
+        self.assertTrue(any("LIGHT-1" in issue for issue in out["extraction_issues"]))
+        self.assertFalse(any("SUB-1" in issue or "SUPPRESSED-1" in issue for issue in out["extraction_issues"]))
+
+    def test_capture_without_exact_extents_keeps_box_unusable_for_checks(self):
+        from solidworks_mcp.design.inspect import _native_metrics
+        ns = types.SimpleNamespace
+        def val(obj, name):
+            out = getattr(obj, name)
+            return out() if callable(out) else out
+        def call(obj, name, *args): return getattr(obj, name)(*args)
+        body = ns(Name="Body", GetFaces=lambda: [], GetEdges=lambda: [], GetExtremePoint=lambda *args: False)
+        doc = ns(GetBodies2=lambda *args: [body])
+        issues = []
+        metrics, box = _native_metrics(doc, {"type": "part", "errors": [], "box_mm": {"size": [1, 2, 3]}}, issues,
+                                       val, call, lambda value=0.0: ns(value=value))
+        self.assertIsNone(box)
+        self.assertIsNone(metrics["extent_x"]["uncertainty"])
+        self.assertTrue(any("exact extents unavailable" in issue for issue in issues))
+
+
+class Batteries(unittest.TestCase):
+    """Protocol doubles for the V1/V2 batteries; not a live SolidWorks test."""
+    def modules(self, report, interference=None):
+        ns = types.SimpleNamespace
+        def val(obj, name):
+            out = getattr(obj, name)
+            return out() if callable(out) else out
+        def call(obj, name, *args): return getattr(obj, name)(*args)
+        backend = types.ModuleType("solidworks_mcp.com")
+        backend.val, backend.call, backend.features = val, call, lambda d: []
+        backend.byref_double = lambda value=0.0: ns(value=value)
+        verification = types.ModuleType("solidworks_mcp.verification")
+        verification.model_report = lambda d: deepcopy(report)
+        verification.check_interference = lambda d, limit=20: deepcopy(interference or {"success": True, "count": 0, "total_volume_mm3": 0.0, "items": []})
+        return patch.dict(sys.modules, {"solidworks_mcp.com": backend, "solidworks_mcp.verification": verification})
+
+    def test_part_battery_default_and_target_rows(self):
+        from solidworks_mcp.design.battery import run_battery
+        ns = types.SimpleNamespace
+        body = ns(Name="Body", GetFaces=lambda: [], GetEdges=lambda: [], GetExtremePoint=extreme_box((0, 0, 0), (.06, .04, .01)))
+        doc = ns(GetBodies2=lambda *args: [body])
+        report = {"type": "part", "document": "BRACKET", "errors": [], "unsaved_changes": False, "mass": {"mass_kg": 0.0648}, "bodies": [{}]}
+        app = ns(GetDocuments=lambda: [ns(GetTitle=lambda: "BRACKET", Visible=True), ns(GetTitle=lambda: "OLD_PART", Visible=True),
+                                       ns(GetTitle=lambda: "REFERENCED", Visible=False)])
+        with self.modules(report):
+            out = run_battery(doc, app, {"mass_kg": {"le": 0.07}, "extent_x": {"eq": 60, "tolerance": 0.01}})
+            failing = run_battery(doc, app, {"mass_kg": {"op": "le", "limit": 0.06}})
+            with self.assertRaises(ValueError): run_battery(doc, app, {"mass_kg": {"le": 1, "ge": 0}})
+        rows = {r["check"]: r for r in out["rows"]}
+        self.assertEqual(out["battery"], "V1 part")
+        self.assertTrue(out["passed"])
+        self.assertTrue(rows["solid_bodies"]["pass"] and rows["rebuild_errors"]["pass"] and rows["extent_x"]["pass"])
+        self.assertIsNone(rows["extent_z"]["pass"])                      # recorded, not checked
+        self.assertEqual(out["open_windows"], ["OLD_PART"])
+        self.assertTrue(out["hints"])
+        self.assertFalse(failing["passed"])
+        self.assertEqual([(i["check"], i["class"]) for i in failing["issues"]], [("mass_kg", "MODEL")])
+
+    def test_assembly_battery_allowances_constraints_and_parking(self):
+        from solidworks_mcp.design.battery import run_battery
+        ns = types.SimpleNamespace
+        identity = ns(ArrayData=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0])
+        def comp(name, fixed, status, low, high):
+            body = ns(Name="Body", GetFaces=lambda: [], GetEdges=lambda: [], GetExtremePoint=extreme_box(low, high))
+            return ns(Name2=name, IsSuppressed=lambda: False, IsFixed=lambda: fixed, GetConstrainedStatus=lambda: status,
+                      GetBodies2=lambda kind: [body], GetTotalTransform=lambda apply: identity, Transform2=identity,
+                      GetPathName=lambda: "C:/x.sldprt", ReferencedConfiguration="Default")
+        parts = [comp("CASE-1", True, 3, (-.03, -.03, -.03), (.03, .03, .03)),
+                 comp("FD_RING-1", False, 2, (-.06, 0, -.06), (.06, .02, .06)),
+                 comp("PIN-1", False, 4, (-.032, -.004, -.004), (.032, .004, .004))]
+        doc = ns(GetComponents=lambda top: parts)
+        report = {"type": "assembly", "document": "ASM", "errors": [], "unsaved_changes": True,
+                  "mass": {"mass_kg": 1.8}, "components": {"top_level": 3, "total": 3, "suppressed": 0}, "mates": 5}
+        found = {"success": True, "count": 2, "total_volume_mm3": 1.176,
+                 "items": [{"components": ["CASE-1", "PIN-1"], "volume_mm3": 1.0},
+                           {"components": ["FD_PINION-1", "FD_RING-1"], "volume_mm3": 0.176},
+                           {"components": ["FD_RING-1", "FD_PINION-1"], "volume_mm3": 0.3}]}
+        allow = [{"pair": ["FD_RING*", "FD_PINION*"], "max_mm3": 0.5, "basis": "Tredgold tooth approximation residue"}]
+        with self.modules(report, found):
+            out = run_battery(doc, None, {}, True, allow, parked=True)
+            with self.assertRaises(ValueError): run_battery(doc, None, {}, True, [{"pair": ["A*", "B*"], "max_mm3": 1}])
+        rows = {r["check"]: r for r in out["rows"]}
+        self.assertEqual(out["battery"], "V2 assembly")
+        self.assertEqual(rows["interference_unallowed_mm3"]["value"], 1.0)
+        self.assertFalse(rows["interference_unallowed_mm3"]["pass"])
+        # The two ring/pinion regions add up to 0.476 mm3, inside the 0.5 mm3 allowance for that pair.
+        self.assertEqual([(p["allowed"], p["regions"], p["volume_mm3"]) for p in out["interference_pairs"]],
+                         [(False, 1, 1.0), (True, 2, 0.476)])
+        self.assertEqual(out["free_components"], [{"component": "FD_RING-1", "status": "under"}])
+        self.assertFalse(rows["free_components"]["pass"])                  # parked: nothing may move
+        self.assertEqual(out["constraint_problems"], [{"component": "PIN-1", "status": "over"}])
+        self.assertEqual(rows["fixed_components"]["value"], 1)
+        self.assertEqual(rows["extent_x"]["value"], 120.0)
+        self.assertIn(("interference_unallowed_mm3", "ASSEMBLY"), {(i["check"], i["class"]) for i in out["issues"]})
+        self.assertFalse(out["passed"])
+        unavailable = {"success": False, "message": "interference detection unavailable"}
+        with self.modules(report, unavailable):
+            blind = run_battery(doc, None, {}, True, allow)
+        self.assertFalse({r["check"]: r for r in blind["rows"]}["interference_unallowed_mm3"]["pass"])
+        self.assertIn(("interference_unallowed_mm3", "METHOD"), {(i["check"], i["class"]) for i in blind["issues"]})
 
 
 class Integration(TemporaryStore):

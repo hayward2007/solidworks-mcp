@@ -386,7 +386,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="execute_python",
             description=("Run Python with SolidWorks API access, one modeling stage per call. Names: sw, doc, automation, "
-                         "val, call, arr, strings, byref_int, byref_bool, select, plane, feats, feat, active, report, "
+                         "val, call, arr, strings, byref_int, byref_bool, byref_double, select, plane, feats, feat, active, report, "
                          "render, store, mm, deg, math, json. print() output and the variable 'result' are returned; "
                          "render() attaches a small image. API units are metres and radians. Before a design task "
                          "read knowledge_get('agent-guide') once: build-verify loop, basis tags, token rules."),
@@ -443,6 +443,23 @@ async def list_tools() -> list[Tool]:
             name="check_interference",
             description="Interference volumes (mm3) between components of the active assembly.",
             inputSchema={"type": "object", "properties": {}, "required": []}
+        ),
+        Tool(
+            name="verify_model",
+            description=("Standard verification battery of design-workflow on the active document, read-only: V1 part or "
+                         "V2 assembly. Fixed rows check|value|unit|uncertainty|limit|pass (same margin rule as Design "
+                         "Studio checks), interference pairs with allowances, free/over-constrained components, other open "
+                         "windows and issue candidates. Default checks: rebuild_errors 0, solid_bodies 1 (part), "
+                         "unresolved components 0, unallowed interference 0 (assembly)."),
+            inputSchema={"type": "object", "properties": {
+                "targets": {"type": "object", "description": "metric -> {le|ge|eq: limit, tolerance?}; metrics: mass_kg, "
+                            "volume_mm3, area_mm2, extent_x, extent_y, extent_z, solid_bodies, rebuild_errors, components, mates"},
+                "interference": {"type": "boolean", "default": True, "description": "assemblies: run interference detection"},
+                "allow": {"type": "array", "items": {"type": "object"}, "description": "allowed interference: "
+                          "{pair: [pattern, pattern], max_mm3, basis}; patterns match component names (fnmatch)"},
+                "parked": {"type": "boolean", "default": False, "description": "assemblies: require no free components "
+                           "(parking pose before render, capture or save)"}},
+                "required": []}
         ),
 
         # Design knowledge base
@@ -695,7 +712,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 result = _execute_python_fixed(code, bool(arguments.get("report", False)))
         
         # Verification tools (text-to-CAD loop)
-        elif name in ("model_report", "render_views", "export_model", "check_interference"):
+        elif name in ("model_report", "render_views", "export_model", "check_interference", "verify_model"):
             result = _verification_handler(name, arguments)
         
         # Design knowledge base
@@ -800,7 +817,8 @@ def _execute_python_fixed(code: str, with_report: bool = False) -> Dict:
             'win32com': win32com,
             'pythoncom': pythoncom,
             'val': swcom.val, 'call': swcom.call, 'arr': swcom.arr, 'strings': swcom.strings,
-            'byref_int': swcom.byref_int, 'byref_bool': swcom.byref_bool, 'NOCALL': swcom.NOCALL,
+            'byref_int': swcom.byref_int, 'byref_bool': swcom.byref_bool, 'byref_double': swcom.byref_double,
+            'NOCALL': swcom.NOCALL,
             'select': swcom.select,
             'feats': lambda d=None: swcom.features(d or active()),
             'feat': lambda feature_name, d=None: swcom.feature(d or active(), feature_name),
@@ -898,6 +916,15 @@ def _verification_handler(name: str, arguments: dict) -> Dict:
                 res["images"] = [png]
             return res
         
+        if name == "verify_model":
+            from .design.battery import run_battery
+            out = run_battery(doc, sw_automation.app, arguments.get("targets") or {},
+                              bool(arguments.get("interference", True)), arguments.get("allow") or [],
+                              bool(arguments.get("parked", False)))
+            ok = out.get("battery") is not None
+            return {"success": ok, "message": out.get("summary", name), "error_code": 0 if ok else 999,
+                    "error_name": "swSuccess" if ok else "swUnknownError", "data": out}
+
         if name == "export_model":
             out = verification.export_model(doc, arguments.get("format", "step"), arguments.get("path"))
         else:

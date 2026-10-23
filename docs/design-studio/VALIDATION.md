@@ -75,6 +75,21 @@ HTML 보고서를 브라우저에서 열어 이미지·표·검토 상태 표시
   - 테스트 1개가 UTF-8 HTML 보고서를 기본 인코딩으로 읽어 한글 Windows(cp949)에서 실패: `encoding="utf-8"` 지정.
 - 단위 테스트 62개 OK (Windows 전용 `test_verification` 포함; 설치 테스트 1개는 Windows에서 의도적으로 건너뜀).
 
+### capture 지표 불확도 (2026-10-23)
+
+- `design_capture` 지표마다 `uncertainty`(같은 단위)와 `uncertainty_basis`를 기록하도록 고침. 이전에는 불확도가 없어
+  체크에 바로 쓸 수 없었고, 같은 값을 불확도와 함께 evidence로 다시 기록해야 했음.
+- 외곽 치수는 `IBody2.GetExtremePoint`로 구한 꽉 맞는 값(부품 좌표 → 어셈블리 좌표 변환). 차동기어 어셈블리에서
+  `GetBox`는 184.096 × 81.42 × 118.124 mm, 꽉 맞는 값은 183.886 × 81.42 × 117.695 mm. 크로스핀 지름 7.9955는
+  7.995 ± 0.00052로 나옴(`GetPartBox`는 7.996).
+- 질량특성 수치 하한을 실측으로 정함. 와셔 두 개(평면·원통, 직선·원 모서리)는 닫힌식과 5e-16 이내로 일치.
+  지름 8 핀에 지름 3 교차 구멍(교차 모서리)은 체적 -4.8e-6, 면적 -7.8e-6 / -1.8e-5로 어긋남.
+  그래서 직선·원·타원 모서리만 있는 해석 형상은 1e-8 × 값, 그 외는 1e-4 × 값 + 보고 자리수 절반.
+- 개수 지표(rebuild_errors, solid_bodies, components, mates)는 정확값(불확도 0). 어셈블리에서 경량화·미해결
+  부품이 있으면 capture가 incomplete로 표시되고, 근사 박스는 `uncertainty: null`이라 체크에 쓸 수 없음.
+- 테스트 38개(design studio + verification) OK. execute_python에서 테스트를 돌릴 때는 `stdin=subprocess.DEVNULL`로
+  띄워야 함: MCP 서버의 stdio 파이프를 물려받으면 CLI 테스트가 멈춤.
+
 ## 아직 검증하지 않은 범위
 
 - 사용자 원본 부품·어셈블리의 native capture(어셈블리 components 추출 포함), 형상 수정, 어셈블리 검증.

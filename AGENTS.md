@@ -13,6 +13,6 @@
   Windows CAD, physical tests, FEA or sensor validation from portable unit tests.
 - Shared service logic belongs in `solidworks_mcp/design`; both MCP servers and the
   CLI use it. No provider API calls, hidden shell evaluation or automatic uploads.
-- Tests: `python -m unittest solidworks_mcp.tests.test_design_studio solidworks_mcp.tests.test_setup solidworks_mcp.tests.test_gears solidworks_mcp.tests.test_topopt solidworks_mcp.tests.test_verification` (the last runs on Windows only).
+- Tests: `python -m unittest solidworks_mcp.tests.test_design_studio solidworks_mcp.tests.test_setup solidworks_mcp.tests.test_gears solidworks_mcp.tests.test_topopt solidworks_mcp.tests.test_verification` (the last runs on Windows only). Started from the MCP server's `execute_python`, pass `stdin=subprocess.DEVNULL`: an inherited stdio pipe makes the CLI test hang.
 - The wheel build copies `knowledge/` into packaged resources. Edit the source corpus,
   not a generated duplicate. Private artifacts/DB/reports belong in `.design-studio/`.
