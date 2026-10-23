@@ -10,7 +10,6 @@ Author: Samsaam Ali Baig
 __version__ = "3.0.0"
 __author__ = "Samsaam Ali Baig"
 
-from .automation import SolidWorksAutomation
 from .config import get_config, reload_config, save_config, SolidWorksConfig
 from .constants import SwErrors, SwPlanes, SwDocumentTypes, SwViews
 from .utils import (
@@ -48,3 +47,11 @@ __all__ = [
     "find_template",
     "get_solidworks_info",
 ]
+
+
+def __getattr__(name):
+    # Knowledge/review/numerical modules also run without Windows COM.
+    if name == "SolidWorksAutomation":
+        from .automation import SolidWorksAutomation
+        return SolidWorksAutomation
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

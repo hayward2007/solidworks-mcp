@@ -11,3 +11,5 @@ build/
 *.egg-info/
 # Local virtual environment created by setup_windows.bat
 .venv/
+.design-studio/
+.pytest_cache/

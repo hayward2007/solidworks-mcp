@@ -2,9 +2,17 @@
 title: Design policy - a basis for every number
 tags: policy, 정책, 근거, rationale, basis, default, 기본값, symmetry, 대칭, ratio, 1:1, preferred numbers, 표준수, renard, safety factor, 안전율, wall, 두께, fillet, 필렛, chamfer, 모따기, clearance, 간극, iteration, 반복
 summary: Basis ladder, neutral quantitative defaults when no basis exists, default safety factors and geometry defaults.
+authority: unverified
+checked: unverified
+applicability: Legacy starting values only; product-design-policy supersedes implicit defaults and requires exact source verification
 ---
 
 # Design policy
+
+The tables below are historical starting points, not validated universal rules.
+Every numerical standard claim needs an attached edition and clause/table before
+detail use. Actual material/process/load evidence overrides all defaults. See
+product-design-policy, standards-registry and manufacturing-detail.
 
 ## Basis ladder
 Use the highest available basis for each decision and tag it in specs, script comments and reports:

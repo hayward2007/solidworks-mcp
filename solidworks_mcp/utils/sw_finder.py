@@ -17,7 +17,7 @@ try:
     HAS_WINREG = True
 except ImportError:
     HAS_WINREG = False
-    logger.warning("winreg not available - registry search disabled")
+    logger.debug("winreg not available - registry search disabled")
 
 
 class SolidWorksFinder:

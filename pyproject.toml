@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solidworks-design-studio"
+version = "0.1.0"
+description = "Evidence-based mechanical design investigation, review and SolidWorks MCP"
+requires-python = ">=3.10"
+dependencies = ["jsonschema>=4.21,<5", "mcp>=1.0.0,<2"]
+
+[project.optional-dependencies]
+cad = ["pywin32>=306; sys_platform == 'win32'", "Pillow>=10", "numpy>=1.26", "scipy>=1.11", "python-dotenv>=1"]
+
+[project.scripts]
+sw-design = "solidworks_mcp.design.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["solidworks_mcp*"]
+exclude = ["solidworks_mcp.tests*", "solidworks_mcp.backup*"]
+
+[tool.setuptools.package-data]
+solidworks_mcp = ["instructions.md", "config.json"]
+"solidworks_mcp.design" = ["resources/*.json", "resources/*.md", "resources/knowledge/*.md"]

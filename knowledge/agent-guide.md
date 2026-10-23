@@ -1,37 +1,40 @@
 ---
-title: Agent guide - fast, token-efficient SolidWorks design
+title: Agent guide - evidence-based product-quality SolidWorks design
 tags: agent, guide, workflow, token, 토큰, 절약, 가이드, 워크플로, text-to-cad, 텍스트 투 캐드, iteration, 반복, 이터레이션, quality, 품질, report, 보고, vague, 모호
-summary: How to turn short or vague requests into verified SolidWorks models in few calls and few tokens.
+authority: internal_guide
+checked: 2026-10-21
+applicability: Follow product-design-policy for evidence, quality and human-review requirements
+summary: Investigate actual geometry, compare justified alternatives, review appearance and quantify each iteration.
 ---
 
 # Agent guide
 
 ## The loop
-1. **Spec** (max ~10 lines): purpose, envelope, interfaces (mating parts, shafts, bolt patterns), loads/motion, process + material, the numbers to hit. Every number gets a basis tag ([req] [std] [calc] [cat] [dfm] [heur] [neutral], see design-policy).
-2. **Look up only what you need**: `knowledge_search` (snippets, cheap) then `knowledge_get` for one section. Proven API recipes are in `solidworks-api`.
+1. **Investigate and specify fully**: purpose, baseline hashes, datums, protected interfaces, envelope, mating geometry, load cases/motion, process/material, critical tolerances, service and numerical acceptance. Every number gets value/unit/basis/evidence/rationale. Read product-design-policy, design-evidence and design-review; there is no length cap.
+2. **Retrieve complete context**: `design_context(query, mode="quality")` provides mandatory policy and full relevant sections with provenance. Legacy `knowledge_search` / `knowledge_get` remain discovery helpers; their old numeric notes are unverified unless original sources are attached.
    - Gears: `gear_design` first (numbers and warnings, no CAD), then `create_gear` (one call per gear or pair, self-checked); see `gear-generators`.
    - Lightweight parts: `topology_optimize` on the design space, `build: true` for the plate, then add interface features; see `topology-optimization`.
 3. **Plan the feature order**: base feature -> main features -> patterns/mirrors -> holes and fits -> fillets/chamfers last.
 4. **Build one stage per `execute_python` call**, parameters at the top of the script, helpers injected (see below).
-5. **Verify every stage**: `report()` inside the script (or `model_report`). Images only at milestones.
+5. **Verify every stage**: `report()` inside the script (or `model_report`), actual dimension checks, material/density and adequate visual evidence. Compare silhouette, proportions, seams, radii and CMF alongside numerical criteria.
 6. **Fix the first failure only** and re-run that stage. After 3 failed attempts on the same stage, change the approach (different feature type, simpler profile) or ask.
-7. **Quality gate, then a short report.**
+7. **Submit a full proposal and human review packet before design improvement handoff.** Use three meaningful alternatives and quantified deltas. Never self-record the user's approval. Existing separately authorized routine CAD work does not require a new product-design approval flow.
 
 ## Understanding vague requests
 - Infer intent from context first: open documents, existing sketches and dimensions, previous parts, the product the user works on. Measure existing geometry instead of inventing values.
 - Fill gaps with the basis ladder (design-policy). State all assumptions in one compact line and continue; ask only when the answer changes the concept (ratio, envelope, mating standard, process).
 - Prefer editing what exists (a dimension, a sketch, a feature parameter) over rebuilding.
-- Ambiguous size words: "small" = fits the stated envelope with the minimum standard part; "strong" = safety factor 3 on yield; "light" = remove material only where stress allows (pockets, lightening holes) and report mass.
+- Translate ambiguous size/strength words into proposed quantified targets and declare them assumptions until confirmed. Never treat one safety-factor default as a universal acceptance criterion.
 
-## Token budget rules
+## Context and output rules
 - **One script per stage** instead of many small tool calls; every call costs a few hundred tokens of overhead plus its output.
 - **Print little**: counts, key values, pass/fail. Never print whole feature trees, point lists, arrays, or tracebacks of known issues.
 - **`report()` / `model_report`** (~150-300 tokens) after each stage gives box, volume, mass, body count and rebuild errors.
-- **Images are expensive but decisive**: one view at size 384 is about 200 tokens, the 2x2 grid at 384 about 800. Use them after the base shape, after patterns, and at the end, or whenever a number looks wrong. Never send full screenshots.
+- **Visual evidence is required for visual decisions**: obtain consistent orthographic, section and three-quarter views at a resolution that reveals the design issue. Image token cost depends on provider and is not measured by this system.
 - **Reuse code**: put helper functions and computed geometry in `store` (persists while the server runs) and call them from later, shorter scripts.
 - **Use recipes, not trial and error**: `solidworks-api` lists calls and argument lists that are known to work.
 - **Don't repeat context**: do not re-read knowledge sections or files already in the conversation.
-- **Short answers**: what was built, key dimensions with their basis, check results, at most 3 next options.
+- **Quality before compression**: avoid irrelevant repeated output, but retain dimensions, sources, failures, uncertainty and visual tradeoffs in the review packet. Compact retrieval is optional.
 
 ## Quality gate (every stage)
 - `report()["errors"]` is empty (rebuild OK).

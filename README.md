@@ -14,6 +14,31 @@
 >
 > Based on [alisamsam/Solidworks-MCP](https://github.com/alisamsam/Solidworks-MCP) (MIT, Samsaam Ali Baig), with a one-click Windows installer, SolidWorks 2025 COM fixes and support for localized (e.g. Korean) SolidWorks.
 
+## Design Studio: 역설계 · 근거 DB · 사용자 검토 · 설계 개선
+
+CLI와 Claude/Codex에서 **조사 → 증거 → 구체적 형상·치수 → 대안 비교 → 정량·외형 검토 → 개선**을
+진행합니다. 품질 우선 RAG, SQLite 증거/설계 이력, 계산 재검증, 사용자 검토 패킷을 추가했습니다.
+기존 CAD 도구 34개를 유지하고 Windows 서버에 Design Studio 도구 17개를 더했습니다.
+독립 서버의 16개 도구는 macOS/Linux에서도 실행되며, 실제 CAD 조작·native capture는 Windows에서 합니다.
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+sw-design doctor --mcp
+sw-design demo --output ./sensor-front-example
+sw-design connect --client codex --apply
+sw-design start sensor-front-demo --agent codex
+```
+
+Windows에서는 `.venv\Scripts\python.exe -m pip install -e ".[cad]"`와
+`.venv\Scripts\sw-design.exe`를 사용합니다. `connect --client claude-code --apply`도 지원합니다.
+예제는 가정 기반의 실제 계산 반복이며 제품 실측·해석·승인 결과가 아닙니다.
+
+**[전체 사용법·예제·검토 과정](docs/design-studio/README.md)** ·
+[구현 계획](docs/design-studio/IMPLEMENTATION_PLAN.md) ·
+[품질 정책](knowledge/product-design-policy.md) · [표준 적용 범위](knowledge/standards-registry.md)
+
 ## 설치: Claude에게 한 마디 · Install: just ask Claude
 
 > **"https://github.com/hayward2007/solidworks-mcp 설치해줘"** · *"Install https://github.com/hayward2007/solidworks-mcp"*
@@ -39,7 +64,7 @@ The server has to run on the user's Windows PC next to SolidWorks; never install
    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1 | iex"
    ```
 
-   It puts the code in `%USERPROFILE%\solidworks-mcp` (or updates it), creates `.venv`, installs the requirements, self-tests the server (34 tools), registers `solidworks` in Claude Desktop and in Claude Code (`claude mcp add --scope user`) and copies the skill to `~/.claude/skills/solidworks-design`. The first run takes a few minutes; success ends with `All set`.
+   It puts the code in `%USERPROFILE%\solidworks-mcp` (or updates it), creates `.venv`, installs the requirements, self-tests the server (51 tools, including Design Studio), registers `solidworks` in Claude Desktop and in Claude Code (`claude mcp add --scope user`) and copies the skill to `~/.claude/skills/solidworks-design`. The first run takes a few minutes; success ends with `All set`.
    - If it reports `Python 3.10 or newer (64-bit) was not found`, ask the user, then install Python 3.13 with winget and continue:
      `powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/hayward2007/solidworks-mcp/main/install.ps1))) -InstallPython"`
    - Other options go in the same place: `-InstallDir <path>`, `-NoClaudeDesktop`, `-NoClaudeCode`, `-NoSkill`, `-Uninstall`.
@@ -80,7 +105,7 @@ The server has to run on the user's Windows PC next to SolidWorks; never install
 
 SolidWorks MCP Server는 Claude 같은 AI 에이전트가 SolidWorks를 직접 조작하게 해 주는 [Model Context Protocol](https://modelcontextprotocol.io/) 서버예요. 메뉴를 클릭하는 대신 만들고 싶은 형상을 말로 설명하면, Claude가 SolidWorks COM API로 파트를 만들고 스케치를 그리고 피처를 추가해요.
 
-- 도구 34개: 연결, 문서, 스케치, 피처, 유틸리티, SolidWorks API를 직접 실행하는 `execute_python`, 검증(Text-to-CAD), 설계 지식 검색, 기어 생성, 토폴로지 최적화
+- 도구 51개 (기존 CAD 34 + Design Studio 17): 연결, 문서, 스케치, 피처, 유틸리티, SolidWorks API를 직접 실행하는 `execute_python`, 검증(Text-to-CAD), 설계 지식 검색, 기어 생성, 토폴로지 최적화
 - 에이전트용 작업 규칙(토큰 절약, 설계 근거)이 매 세션 자동 적용돼요
 - SolidWorks 2023–2025 지원, 설치 경로 자동 탐지(레지스트리)
 - 단위: mm, cm, m, inch, ft (기본 mm)
@@ -140,7 +165,7 @@ Claude의 설정(Settings) → 개발자(Developer)에서 `solidworks` 서버가
 2. 64비트 Python 3.10 이상을 찾아요: `py -0p` 목록 → `py -3` → PATH의 `python` → `%LOCALAPPDATA%\Python\pythoncore-3.*`, `%LOCALAPPDATA%\Programs\Python\Python3*`, `%ProgramFiles%\Python3*` 순서예요. numpy·scipy·pywin32 휠이 있는 3.10–3.14 중 가장 새 버전을 골라요. 없으면 winget으로 Python 3.13을 설치할지 물어봐요(`-InstallPython`이면 묻지 않고 설치).
 3. 프로젝트 폴더에 가상환경 `.venv`를 만들어요 (이미 있으면 다시 써요).
 4. `requirements.txt`를 설치해요 (`mcp` 1.x, `pywin32`, `python-dotenv`, `Pillow`, `numpy`, `scipy`).
-5. 서버 자가 진단: Claude Desktop과 같은 방식(stdio)으로 서버를 띄워서 MCP 초기화와 도구 목록(34개)을 확인해요.
+5. 서버 자가 진단: Claude Desktop과 같은 방식(stdio)으로 서버를 띄워서 MCP 초기화와 도구 목록(51개)을 확인해요.
 6. Claude Desktop 설정 파일에 `solidworks` 서버를 등록해요. 다른 서버와 설정은 그대로 두고, 바꾸기 전에 `claude_desktop_config.json.bak-날짜-시간` 백업을 만들어요. Microsoft Store(MSIX) 설치판의 설정 위치도 함께 갱신해요.
 7. Claude Code(`claude` CLI)가 있으면 `claude mcp add --scope user`로 등록하고 설계 스킬을 `~/.claude/skills/solidworks-design`에 복사해요. Claude Desktop·claude.ai에 올릴 `dist\solidworks-design.zip`도 만들어요.
 8. 화면에 나온 내용을 `setup_mcp.log`에 저장해요.
@@ -206,14 +231,14 @@ Claude는 보통 `create_sketch` → `draw_*` → `close_sketch` → `extrude_sk
 
 짧거나 모호한 요청도 에이전트가 사양으로 정리하고, 모델을 직접 보고 재면서 빠르게 반복하게 하는 흐름이에요. 서버 instructions(`solidworks_mcp/instructions.md`)로 매 세션 자동 적용돼요(Cowork는 `solidworks-design` 스킬로).
 
-1. **사양 정리**: 목적, 크기, 연결부, 하중·동작, 공정·재료를 10줄 이내로 정리해요. 모든 수치에 근거를 붙여요. 순서는 [req] 요구 사항·기존 형상 > [std] 규격 > [calc] 계산 > [cat] 카탈로그·확인된 미스미 품번 > [dfm] 공정 규칙 > [heur] 경험칙 > [neutral] 근거가 없을 때의 중립값(대칭, 1:1, 같은 간격, R10 표준수, 정수 mm)이에요.
-2. **필요한 지식만 조회**: `knowledge_search`로 찾고 `knowledge_get`으로 한 섹션만 읽어요.
+1. **사양 정리**: 목적, 기준 좌표계, 보호 인터페이스, 크기, 연결부, 하중·동작, 공정·재료를 충분히 구체화해요. 길이 제한은 없어요. 모든 수치에 근거를 붙여요. 순서는 [req] 요구 사항·기존 형상 > [std] 규격 > [calc] 계산 > [cat] 카탈로그·확인된 미스미 품번 > [dfm] 공정 규칙 > [heur] 경험칙 > [neutral] 근거가 없을 때의 중립값(대칭, 1:1, 같은 간격, R10 표준수, 정수 mm)이에요.
+2. **필요한 지식만 조회**: `design_context(mode="quality")`로 정책과 관련 근거를 읽어요. 기존 `knowledge_search`/`knowledge_get`도 사용할 수 있어요.
 3. **단계별 모델링**: 단계마다 `execute_python` 한 번, 파라미터는 스크립트 맨 위에 둬요.
-4. **매 단계 검증**: `model_report`(오류·바디·치수·질량, 약 200토큰). 중요한 단계에서만 `render_views`(2×2 이미지 약 800토큰). 어셈블리는 `check_interference`.
+4. **매 단계 검증**: `model_report`(오류·바디·치수·질량). 형상·외형 판단에 충분한 `render_views`와 단면을 확보해요. 어셈블리는 `check_interference`.
 5. **품질 게이트**: 재생성 오류 없음, 의도한 바디 수, 사양 치수 일치, 의도치 않은 간섭 없음, 공정 규칙 충족. 통과해야 다음 단계로 넘어가요.
 6. **짧은 보고**: 핵심 치수와 근거, 검증 수치, 다음 선택지 최대 3개.
 
-토큰 절약 요약: 작은 호출 여러 번 대신 단계당 스크립트 하나, 큰 데이터는 출력하지 않기, 이미지는 마일스톤에서만 작게, 다시 쓸 코드는 `store`에 저장, 검증된 API 레시피(`knowledge_get("solidworks-api")`) 사용. 자세한 내용은 [knowledge/agent-guide.md](knowledge/agent-guide.md), 근거 규칙은 [knowledge/design-policy.md](knowledge/design-policy.md)에 있어요.
+품질 우선: 치수·근거·가정·시각 증거를 유지하고 불필요한 반복만 줄여요. 제품 개선은 대안 3개, 정량·외형 평가, 검토 패킷과 사용자 검토를 거쳐요. 기존 노트의 표준 태그는 원문 확인을 대신하지 않아요. 자세한 내용은 [knowledge/agent-guide.md](knowledge/agent-guide.md), 근거 규칙은 [knowledge/design-policy.md](knowledge/design-policy.md)에 있어요.
 
 ### 도구 목록
 
@@ -457,7 +482,7 @@ MIT 라이선스예요 ([LICENSE](LICENSE)). 원본 프로젝트: [alisamsam/Sol
 
 SolidWorks MCP Server is a [Model Context Protocol](https://modelcontextprotocol.io/) server that lets an AI agent such as Claude drive SolidWorks. Instead of clicking through menus, you describe the geometry you want and Claude builds it through the SolidWorks COM API: parts, sketches and features.
 
-- 34 tools: connection, documents, sketches, features, utilities, `execute_python` for direct SolidWorks API access, verification (text-to-CAD), design-knowledge search, gear generation and topology optimization
+- 51 tools (34 existing CAD + 17 Design Studio): connection, documents, sketches, features, utilities, `execute_python` for direct SolidWorks API access, verification (text-to-CAD), design-knowledge search, gear generation and topology optimization
 - Agent working rules (token budget, design rationale) are applied automatically in every session
 - SolidWorks 2023–2025, installation auto-detected from the registry
 - Units: mm, cm, m, inch, ft (default mm)
@@ -517,7 +542,7 @@ In Claude, Settings → Developer should show the `solidworks` server as running
 2. Finds a 64-bit Python 3.10+: the `py -0p` list, `py -3`, `python` on PATH, then `%LOCALAPPDATA%\Python\pythoncore-3.*`, `%LOCALAPPDATA%\Programs\Python\Python3*` and `%ProgramFiles%\Python3*`. It picks the newest of 3.10–3.14, which numpy, scipy and pywin32 ship wheels for. Without one it offers to install Python 3.13 with winget (`-InstallPython` installs it without asking).
 3. Creates a virtual environment in `.venv` inside the project folder (reuses a working one).
 4. Installs `requirements.txt` (`mcp` 1.x, `pywin32`, `python-dotenv`, `Pillow`, `numpy`, `scipy`).
-5. Self-test: starts the server over stdio, exactly like Claude Desktop does, and checks the MCP handshake and the tool list (34 tools).
+5. Self-test: starts the server over stdio, exactly like Claude Desktop does, and checks the MCP handshake and the tool list (51 tools).
 6. Registers the `solidworks` server in Claude Desktop's config. Other servers and settings are kept, and a `claude_desktop_config.json.bak-date-time` backup is written before any change. The Microsoft Store (MSIX) config location is updated too.
 7. If Claude Code (the `claude` CLI) is installed, registers the server with `claude mcp add --scope user` and copies the design skill to `~/.claude/skills/solidworks-design`. It also writes `dist\solidworks-design.zip` for uploading the skill to Claude Desktop / claude.ai.
 8. Saves everything it printed to `setup_mcp.log`.
@@ -583,14 +608,14 @@ Claude typically chains `create_sketch` → `draw_*` → `close_sketch` → `ext
 
 A loop that lets the agent turn short or vague requests into a spec, then build, look and measure, and iterate quickly. It is sent to the agent in every session as the server instructions (`solidworks_mcp/instructions.md`); in Cowork the `solidworks-design` skill brings it in.
 
-1. **Spec**: purpose, envelope, interfaces, loads/motion, process and material in at most ~10 lines. Every number gets a basis, in this order: [req] requirement or existing geometry > [std] standard > [calc] calculation > [cat] catalogue or user-verified MISUMI part > [dfm] process rule > [heur] rule of thumb > [neutral] a neutral value when nothing else applies (symmetry, 1:1, equal spacing, R10 preferred numbers, whole mm).
-2. **Look up only what is needed**: `knowledge_search`, then `knowledge_get` for one section.
+1. **Spec**: purpose, datums, protected interfaces, envelope, loads/motion, process and material in sufficient detail; no length cap. Every number gets a basis, in this order: [req] requirement or existing geometry > [std] standard > [calc] calculation > [cat] catalogue or user-verified MISUMI part > [dfm] process rule > [heur] rule of thumb > [neutral] a neutral value when nothing else applies (symmetry, 1:1, equal spacing, R10 preferred numbers, whole mm).
+2. **Retrieve justified context**: `design_context(mode="quality")`; legacy search/get remain available.
 3. **Build in stages**: one `execute_python` call per stage, parameters at the top of the script.
-4. **Verify every stage**: `model_report` (errors, bodies, box, mass; about 200 tokens), `render_views` only at milestones (2×2 image about 800 tokens), `check_interference` for assemblies.
+4. **Verify every stage**: `model_report` (errors, bodies, box, mass), sufficient orthographic/section/material `render_views`, `check_interference` for assemblies.
 5. **Quality gate**: no rebuild errors, intended body count, dimensions match the spec, no unintended interference, process rules met, before moving on.
 6. **Short report**: key dimensions with their basis, check numbers, at most 3 next options.
 
-Token rules in short: one script per stage instead of many small calls, never print large data, small images only at milestones, keep reusable code in `store`, use the verified recipes (`knowledge_get("solidworks-api")`). Details: [knowledge/agent-guide.md](knowledge/agent-guide.md); rationale rules: [knowledge/design-policy.md](knowledge/design-policy.md).
+Quality before compression: retain numerical and visual evidence, sources and assumptions. Product improvement includes three alternatives, quantitative and aesthetic assessment, a review export and explicit user review. A legacy standard tag is not source verification. Details: [knowledge/agent-guide.md](knowledge/agent-guide.md); rationale rules: [knowledge/design-policy.md](knowledge/design-policy.md).
 
 ### Tool reference
 

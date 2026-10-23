@@ -27,6 +27,12 @@ def _slug(text):
 
 # Korean keywords -> English terms used in the notes (prefix match, so "기어의" also hits "기어")
 KO_EN = {
+    "역설계": "reverse engineering evidence measurement", "리버스": "reverse engineering",
+    "외형": "aesthetic silhouette proportion", "실루엣": "silhouette", "디자인": "design aesthetic",
+    "파팅": "split seam parting", "분할": "split seam", "정비": "service access",
+    "시야": "camera field view occlusion", "카메라": "camera optical", "표준": "standard provenance",
+    "승인": "review approval", "증거": "evidence provenance", "좌표": "datum coordinate",
+    "센서": "sensor camera", "역경사": "raked panel overhang", "실측": "measured measurement",
     "스파이럴": "spiral", "나선": "spiral hand", "베벨": "bevel", "마이터": "miter", "기어": "gear", "치차": "gear",
     "스퍼": "spur", "헬리컬": "helical", "웜": "worm", "유성": "planetary", "하모닉": "strain wave harmonic",
     "사이클로": "cycloidal", "모듈": "module", "압력각": "pressure angle", "잇수": "teeth", "백래시": "backlash",

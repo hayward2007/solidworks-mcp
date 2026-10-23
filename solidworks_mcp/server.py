@@ -38,6 +38,7 @@ from .utils import get_solidworks_info, set_default_unit
 from . import com as swcom
 from . import verification
 from .knowledge import kb
+from .design.tools import definitions as design_definitions, dispatch as design_dispatch
 
 # Configure logging
 config = get_config()
@@ -500,7 +501,7 @@ async def list_tools() -> list[Tool]:
                          "plate (3D: imports the STL as a mesh solid). Returns a small preview image."),
             inputSchema=_TOPOLOGY_SCHEMA
         ),
-    ]
+    ] + design_definitions(include_native=True)
 
 
 # ============================================================================
@@ -531,8 +532,14 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     try:
         logger.info(f"Tool: {name}, Args: {arguments}")
         
+        # Portable design evidence/review tools share the native server connection.
+        if name.startswith("design_"):
+            doc = sw_automation.app.ActiveDoc if name == "design_capture" and sw_automation.is_connected else None
+            data = design_dispatch(name, arguments, native_doc=doc)
+            result = {"success": True, "message": name, "error_code": 0, "error_name": "swSuccess", "data": data}
+
         # Connection Tools
-        if name == "connect_solidworks":
+        elif name == "connect_solidworks":
             result = sw_automation.connect()
         
         elif name == "get_solidworks_info":
